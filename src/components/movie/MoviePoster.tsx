@@ -4,6 +4,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 interface MoviePosterProps {
   src: string
+  srcSet?: string
+  sizes?: string
   alt: string
   className?: string
   aspectRatio?: "poster" | "square"
@@ -12,6 +14,8 @@ interface MoviePosterProps {
 
 export function MoviePoster({
   src,
+  srcSet,
+  sizes,
   alt,
   className = "",
   aspectRatio = "poster",
@@ -21,12 +25,12 @@ export function MoviePoster({
   const [hasError, setHasError] = React.useState(false)
   const [retryCount, setRetryCount] = React.useState(0)
 
-  // Reset states when src changes
+  // Reset states when src or srcSet changes
   React.useEffect(() => {
     setIsLoaded(false)
     setHasError(false)
     setRetryCount(0)
-  }, [src])
+  }, [src, srcSet])
 
   // Safety watchdog: If image takes > 12s (e.g. network stall / rate-limit), display fallback card without killing the underlying image load
   React.useEffect(() => {
@@ -42,14 +46,35 @@ export function MoviePoster({
   const aspectClass =
     aspectRatio === "poster" ? "aspect-[2/3]" : "aspect-square"
 
-  // Append cache-buster v=2 and retry counter to bypass stale SVG placeholders from old browser cache
-  const baseSrc = src.includes('v=')
-    ? src
-    : src.includes('?')
-    ? `${src}&v=2`
-    : `${src}?v=2`
+  // Helper to append cache-buster v=2 and retry counter to bypass stale SVG placeholders from old browser cache
+  const formatUrl = (url: string) => {
+    if (!url) return url
+    const withV = url.includes("v=")
+      ? url
+      : url.includes("?")
+      ? `${url}&v=2`
+      : `${url}?v=2`
+    return retryCount > 0 ? `${withV}&r=${retryCount}` : withV
+  }
 
-  const effectiveSrc = retryCount > 0 ? `${baseSrc}&r=${retryCount}` : baseSrc
+  const effectiveSrc = formatUrl(src)
+
+  const effectiveSrcSet = React.useMemo(() => {
+    if (!srcSet) return undefined
+    return srcSet
+      .split(",")
+      .map((entry) => {
+        const trimmed = entry.trim()
+        if (!trimmed) return ""
+        const parts = trimmed.split(/\s+/)
+        if (parts.length === 0 || !parts[0]) return trimmed
+        const url = formatUrl(parts[0])
+        const descriptor = parts[1] ? ` ${parts[1]}` : ""
+        return `${url}${descriptor}`
+      })
+      .filter(Boolean)
+      .join(", ")
+  }, [srcSet, retryCount])
 
   return (
     <div
@@ -63,6 +88,8 @@ export function MoviePoster({
       {/* Actual Image */}
       <img
         src={effectiveSrc}
+        srcSet={effectiveSrcSet}
+        sizes={sizes}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : "low"}
@@ -81,10 +108,10 @@ export function MoviePoster({
             setIsLoaded(true)
           }
         }}
-        className={`h-full w-full object-cover transition-all duration-300 ${
+        className={`h-full w-full object-cover transition-opacity duration-300 transform-gpu ${
           isLoaded && !hasError
-            ? "opacity-100 scale-100"
-            : "opacity-0 scale-95"
+            ? "opacity-100"
+            : "opacity-0 pointer-events-none"
         }`}
       />
 

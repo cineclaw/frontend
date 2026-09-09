@@ -134,8 +134,12 @@ export function HomeShelves() {
               {shelf.items.map((item) => {
                 const isResolving = resolvingId === item.id
                 const posterUrl = item.poster_path
-                  ? `https://image.tmdb.org/t/p/w185${item.poster_path}`
+                  ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
                   : null
+                const posterSrcSet = item.poster_path
+                  ? `https://image.tmdb.org/t/p/w185${item.poster_path} 185w, https://image.tmdb.org/t/p/w342${item.poster_path} 342w, https://image.tmdb.org/t/p/w500${item.poster_path} 500w`
+                  : undefined
+                const posterSizes = "(max-width: 640px) 130px, 160px"
 
                 return (
                   <button
@@ -150,6 +154,8 @@ export function HomeShelves() {
                       {posterUrl ? (
                         <img
                           src={posterUrl}
+                          srcSet={posterSrcSet}
+                          sizes={posterSizes}
                           alt={item.title}
                           loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

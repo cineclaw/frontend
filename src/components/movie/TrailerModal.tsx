@@ -12,7 +12,10 @@ export function TrailerModal({ video, onClose }: TrailerModalProps) {
 
   return (
     <Dialog open={!!video} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="z-[60] w-[95vw] max-w-3xl p-0 bg-black border-border/80 rounded-2xl overflow-hidden shadow-2xl [&>button]:hidden">
+      <DialogContent
+        overlayClassName="z-[89]"
+        className="z-[90] w-[95vw] max-w-3xl p-0 bg-black border-border/80 rounded-2xl overflow-hidden shadow-2xl [&>button]:hidden"
+      >
         <div className="relative aspect-video w-full bg-black">
           {/* Header Bar */}
           <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-3 bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-auto">

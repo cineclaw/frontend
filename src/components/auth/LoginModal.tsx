@@ -55,7 +55,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-cinema-950/95 backdrop-blur-xl"
+          className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-cinema-950/95 backdrop-blur-xl"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -65,32 +65,34 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
             initial={{ scale: 0.94, opacity: 0, y: 16 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.94, opacity: 0, y: 16 }}
-            transition={{ type: "spring", damping: 26, stiffness: 300 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
           >
             {/* Header / Brand */}
             <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-accent-600 to-accent-400 flex items-center justify-center shadow-lg shadow-accent-500/20 mb-3.5">
-                <Clapperboard className="w-7 h-7 text-white" />
+              <div className="w-12 h-12 rounded-2xl bg-accent-500/10 border border-accent-500/30 flex items-center justify-center text-accent-400 mb-3 shadow-inner">
+                <Clapperboard className="w-6 h-6" />
               </div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">CineClaw</h2>
+              <h2 className="text-xl font-bold text-white tracking-tight">
+                CineClaw Access
+              </h2>
               <p className="text-xs text-cinema-400 mt-1">
-                Вход в домашний кинотеатр и медиасервер
+                Введите учетные данные для входа в домашний кинотеатр
               </p>
             </div>
 
-            {/* Error Alert */}
+            {/* Error Banner */}
             {errorMessage && (
               <motion.div
-                className="mb-5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-2.5 text-red-400 text-xs sm:text-sm font-medium"
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
+                className="mb-4 p-3 rounded-xl bg-destructive/15 border border-destructive/30 flex items-center gap-2.5 text-xs text-destructive"
               >
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                <span>{errorMessage}</span>
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span className="font-medium">{errorMessage}</span>
               </motion.div>
             )}
 
-            {/* Login Form */}
+            {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Username field */}
               <div>
@@ -111,7 +113,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
                     placeholder="admin"
                     autoComplete="username"
                     disabled={isLoading}
-                    className="w-full pl-10 pr-4 py-2.5 bg-cinema-950/80 border border-cinema-700/80 rounded-xl text-white placeholder-cinema-600 text-sm focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-colors"
+                    className="w-full pl-10 pr-4 py-2.5 bg-cinema-950/80 border border-cinema-700/80 rounded-xl text-white placeholder-cinema-600 text-[16px] sm:text-sm focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-colors"
                   />
                 </div>
               </div>
@@ -135,7 +137,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen }) => {
                     placeholder="••••••••"
                     autoComplete="current-password"
                     disabled={isLoading}
-                    className="w-full pl-10 pr-11 py-2.5 bg-cinema-950/80 border border-cinema-700/80 rounded-xl text-white placeholder-cinema-600 text-sm focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-colors"
+                    className="w-full pl-10 pr-11 py-2.5 bg-cinema-950/80 border border-cinema-700/80 rounded-xl text-white placeholder-cinema-600 text-[16px] sm:text-sm focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-colors"
                   />
                   <button
                     type="button"

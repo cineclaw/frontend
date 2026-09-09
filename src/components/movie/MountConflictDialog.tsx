@@ -71,7 +71,10 @@ export function MountConflictDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] max-w-lg bg-cinema-900 border-border/80 p-4 sm:p-6 rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+      <DialogContent
+        overlayClassName="z-[99]"
+        className="z-[100] w-[92vw] max-w-lg bg-cinema-900 border-border/80 p-4 sm:p-6 rounded-2xl shadow-2xl max-h-[85dvh] overflow-y-auto custom-scrollbar"
+      >
         <DialogHeader className="space-y-2">
           <DialogTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
             <Layers className="h-5 w-5 text-primary" />
@@ -163,12 +166,13 @@ export function MountConflictDialog({
               value={versionName}
               onChange={(e) => setVersionName(e.target.value)}
               placeholder="Например: 4K UHD, Remux, Дублированный"
-              className="h-9 text-xs bg-cinema-900 border-border/80"
+              className="h-10 text-[16px] sm:text-xs bg-cinema-950 border-border/80"
               disabled={isMounting}
             />
           </div>
 
           <Button
+            type="button"
             className="w-full h-9 text-xs font-semibold gap-1.5"
             onClick={handleAddVersion}
             disabled={isMounting || !versionName.trim()}
@@ -201,6 +205,7 @@ export function MountConflictDialog({
           </div>
 
           <Button
+            type="button"
             variant="outline"
             className="w-full h-9 text-xs font-medium border-amber-500/40 text-amber-400 hover:bg-amber-500/15 hover:text-amber-300 gap-1.5 transition-colors"
             onClick={handleReplace}
@@ -218,6 +223,7 @@ export function MountConflictDialog({
         {/* Cancel button */}
         <div className="flex justify-end pt-1">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             onClick={() => onOpenChange(false)}

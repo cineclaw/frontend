@@ -60,6 +60,14 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
       : "text-zinc-400 bg-zinc-800/40 border-border/40"
 
   if (viewMode === "list") {
+    const listPosterSrc = posters.medium || posters.large || `/poster/${movie.tconst}?size=w185&v=2`
+    const listPosterSrcSet = [
+      `${posters.small || `/poster/${movie.tconst}?size=w154&v=2`} 154w`,
+      `${posters.medium || `/poster/${movie.tconst}?size=w185&v=2`} 185w`,
+      `${posters.large || `/poster/${movie.tconst}?size=w342&v=2`} 342w`,
+    ].join(", ")
+    const listPosterSizes = "(max-width: 640px) 70px, 100px"
+
     return (
       <motion.div
         variants={cardVariants}
@@ -72,7 +80,9 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
         {/* Poster thumbnail */}
         <div className="w-16 sm:w-24 flex-shrink-0">
           <MoviePoster
-            src={posters.small || posters.medium}
+            src={listPosterSrc}
+            srcSet={listPosterSrcSet}
+            sizes={listPosterSizes}
             alt={mainTitle}
             priority={priority}
             className="rounded-xl shadow-md group-hover:scale-[1.02] transition-transform"
@@ -148,6 +158,14 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
   }
 
   // Default Grid Card
+  const gridPosterSrc = posters.large || `/poster/${movie.tconst}?size=w342&v=2`
+  const gridPosterSrcSet = [
+    `${posters.medium || `/poster/${movie.tconst}?size=w185&v=2`} 185w`,
+    `${posters.large || `/poster/${movie.tconst}?size=w342&v=2`} 342w`,
+    `/poster/${movie.tconst}?size=w500&v=2 500w`,
+  ].join(", ")
+  const gridPosterSizes = "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
+
   return (
     <motion.div
       variants={cardVariants}
@@ -160,7 +178,9 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
       {/* Poster Container */}
       <div className="relative w-full overflow-hidden">
         <MoviePoster
-          src={posters.medium || posters.small}
+          src={gridPosterSrc}
+          srcSet={gridPosterSrcSet}
+          sizes={gridPosterSizes}
           alt={mainTitle}
           priority={priority}
           className="group-hover:scale-105 transition-transform duration-300"

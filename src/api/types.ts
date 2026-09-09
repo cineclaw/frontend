@@ -3,6 +3,7 @@ export interface PosterUrls {
   small: string
   medium: string
   large: string
+  xl?: string
 }
 
 export interface MovieDoc {

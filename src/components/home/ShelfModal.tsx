@@ -231,8 +231,12 @@ export function ShelfModal() {
         {items.map((item) => {
           const isResolving = resolvingId === item.id
           const posterUrl = item.poster_path
-            ? `https://image.tmdb.org/t/p/w185${item.poster_path}`
+            ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
             : null
+          const posterSrcSet = item.poster_path
+            ? `https://image.tmdb.org/t/p/w185${item.poster_path} 185w, https://image.tmdb.org/t/p/w342${item.poster_path} 342w, https://image.tmdb.org/t/p/w500${item.poster_path} 500w`
+            : undefined
+          const posterSizes = "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
 
           return (
             <button
@@ -247,6 +251,8 @@ export function ShelfModal() {
                 {posterUrl ? (
                   <img
                     src={posterUrl}
+                    srcSet={posterSrcSet}
+                    sizes={posterSizes}
                     alt={item.title}
                     loading="lazy"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
