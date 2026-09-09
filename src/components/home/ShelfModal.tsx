@@ -40,6 +40,9 @@ const SHELF_ICONS: Record<string, React.ElementType> = {
 
 const DEFAULT_TITLES: Record<string, { title: string; icon: string }> = {
   tracker_hotlist: { title: "Популярно на трекерах", icon: "zap" },
+  uhd_4k: { title: "4K UHD Кинозал", icon: "star" },
+  anime_hub: { title: "Аниме & Мультипликация", icon: "tv" },
+  doc_hub: { title: "Документальное кино", icon: "film" },
   apple_tv: { title: "Apple TV+ Originals", icon: "star" },
   hbo_max: { title: "HBO / Max Originals", icon: "tv" },
   netflix: { title: "Netflix Хиты", icon: "film" },
@@ -72,6 +75,7 @@ export function ShelfModal() {
   const [totalResults, setTotalResults] = useState<number | null>(null)
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [filters, setFilters] = useState<FilterState>({})
+  const [qualityFilter, setQualityFilter] = useState<string>("")
 
   // Current shelf metadata (title, icon)
   const shelfMeta = useMemo(() => {
@@ -88,10 +92,42 @@ export function ShelfModal() {
 
   // Unified fetcher for any shelf type
   const fetchItems = useCallback(
-    async (shelfId: string, mediaType: "movie" | "tv", targetPage: number, currentFilters: FilterState) => {
+    async (
+      shelfId: string,
+      mediaType: "movie" | "tv",
+      targetPage: number,
+      currentFilters: FilterState,
+      quality?: string
+    ) => {
       if (shelfId === "tracker_hotlist") {
-        const res = await triggerGetHotlist({ type: mediaType, page: targetPage }).unwrap()
+        const res = await triggerGetHotlist({
+          type: mediaType,
+          quality: quality || undefined,
+          page: targetPage,
+        }).unwrap()
         return res
+      }
+      if (shelfId === "uhd_4k") {
+        const res = await triggerGetHotlist({
+          type: mediaType,
+          quality: "4k",
+          page: targetPage,
+        }).unwrap()
+        return res
+      }
+      if (shelfId === "anime_hub") {
+        try {
+          const res = await triggerGetHotlist({ type: "anime", page: targetPage }).unwrap()
+          if (res?.items && res.items.length > 0) return res
+        } catch {}
+        return await triggerGetPage({ shelfId: "anime_hub", type: mediaType, page: targetPage }).unwrap()
+      }
+      if (shelfId === "doc_hub") {
+        try {
+          const res = await triggerGetHotlist({ type: "doc", page: targetPage }).unwrap()
+          if (res?.items && res.items.length > 0) return res
+        } catch {}
+        return await triggerGetPage({ shelfId: "doc_hub", type: mediaType, page: targetPage }).unwrap()
       }
       if (shelfId === "catalog_filter") {
         const res = await triggerDiscover({
@@ -116,7 +152,7 @@ export function ShelfModal() {
     [triggerGetHotlist, triggerDiscover, triggerGetPage]
   )
 
-  // Reset & load initial items when shelf opens or mediaType/filters change
+  // Reset & load initial items when shelf opens or mediaType/filters/quality change
   useEffect(() => {
     if (!selectedShelfId) {
       setPage(1)
@@ -128,7 +164,7 @@ export function ShelfModal() {
 
     setPage(1)
 
-    fetchItems(selectedShelfId, selectedMediaType, 1, filters)
+    fetchItems(selectedShelfId, selectedMediaType, 1, filters, qualityFilter)
       .then((res) => {
         if (res?.items) {
           setItems(res.items)
@@ -139,14 +175,14 @@ export function ShelfModal() {
       .catch((err) => {
         console.warn("Failed to fetch shelf page 1:", err)
       })
-  }, [selectedShelfId, selectedMediaType, filters, fetchItems])
+  }, [selectedShelfId, selectedMediaType, filters, qualityFilter, fetchItems])
 
   // Load next page
   const handleLoadMore = async () => {
     if (!selectedShelfId || isFetching) return
     const nextPage = page + 1
     try {
-      const res = await fetchItems(selectedShelfId, selectedMediaType, nextPage, filters)
+      const res = await fetchItems(selectedShelfId, selectedMediaType, nextPage, filters, qualityFilter)
       if (res?.items && res.items.length > 0) {
         setItems((prev) => {
           const existingIds = new Set(prev.map((i) => `${i.id}-${i.tconst || ""}`))
@@ -161,6 +197,7 @@ export function ShelfModal() {
       console.error("Failed to load more shelf items:", err)
     }
   }
+
 
   // Browser back-gesture support via history pushState
   const isClosingRef = useRef(false)
@@ -299,7 +336,37 @@ export function ShelfModal() {
         </div>
       </div>
 
+      {/* Quality Filter for Swarm Hotlist */}
+      {selectedShelfId === "tracker_hotlist" && (
+        <div className="flex items-center gap-2 pt-1 pb-1">
+          <button
+            type="button"
+            onClick={() => setQualityFilter("")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              !qualityFilter
+                ? "bg-cinema-800 text-foreground border border-border/80 shadow-sm font-bold"
+                : "text-muted-foreground hover:text-foreground hover:bg-cinema-850"
+            }`}
+          >
+            Все качества
+          </button>
+          <button
+            type="button"
+            onClick={() => setQualityFilter("4k")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              qualityFilter === "4k"
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm shadow-amber-950/40 font-bold"
+                : "text-muted-foreground hover:text-amber-400 hover:bg-cinema-850"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Только 4K UHD</span>
+          </button>
+        </div>
+      )}
+
       {/* Filter Bar (if catalog_filter shelf is active) */}
+
       {selectedShelfId === "catalog_filter" && (
         <CatalogFilterBar
           mediaType={selectedMediaType}

@@ -33,6 +33,17 @@ interface TorrentListProps {
   isSeries?: boolean
 }
 
+function extractRuTitle(torrentTitle: string): string | undefined {
+  if (!torrentTitle) return undefined
+  const slashIdx = torrentTitle.indexOf("/")
+  let candidate = slashIdx !== -1 ? torrentTitle.slice(0, slashIdx).trim() : torrentTitle
+  candidate = candidate.replace(/\s*[\(\[].*$/, "").trim()
+  if (/[а-яёА-ЯЁ]/.test(candidate)) {
+    return candidate
+  }
+  return undefined
+}
+
 export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps) {
   const [selectedTracker, setSelectedTracker] = useState<string>("all")
   const [selectedResolution, setSelectedResolution] = useState<string>("all")
@@ -53,6 +64,7 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
   } = useGetTorrentsQuery({
     q: query,
     imdb_id: imdbId,
+    type: isSeries ? 'tv' : 'movie',
     limit: 100,
   })
 
@@ -64,9 +76,11 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
     forceRefresh({
       q: query,
       imdb_id: imdbId,
+      type: isSeries ? 'tv' : 'movie',
       limit: 100,
     })
   }
+
 
   const handleCopyMagnet = (magnet: string, e: React.MouseEvent) => {
     e.preventDefault()
@@ -79,6 +93,7 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
   const [mountTorrent] = useMountTorrentMutation()
   const [mountingTorrentId, setMountingTorrentId] = useState<string | null>(null)
   const [mountedTorrentIds, setMountedTorrentIds] = useState<Set<string>>(new Set())
+  const [mountErrors, setMountErrors] = useState<Record<string, string>>({})
 
   const { data: mountStatus } = useGetMountedStatusQuery(imdbId)
   const [conflictTorrent, setConflictTorrent] = useState<any | null>(null)
@@ -93,11 +108,17 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
   ) => {
     const tId = torrent.info_hash || torrent.id
     setMountingTorrentId(tId)
+    setMountErrors((prev) => {
+      const next = { ...prev }
+      delete next[tId]
+      return next
+    })
 
     try {
       await mountTorrent({
         tconst: imdbId,
         title: query,
+        ru_title: torrent.ru_title || extractRuTitle(torrent.title),
         year: year ? year.toString() : undefined,
         type: isSeries ? "tvSeries" : "movie",
         season: targetSeason ?? undefined,
@@ -114,8 +135,11 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
       setMountedTorrentIds((prev) => new Set(prev).add(tId))
       window.open(`http://${window.location.hostname}:8096`, "_blank")
       setIsConflictDialogOpen(false)
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to mount torrent for streaming:", err)
+      const errMsg =
+        err?.data?.error || err?.error || err?.message || "Ошибка монтирования в Jellyfin"
+      setMountErrors((prev) => ({ ...prev, [tId]: errMsg }))
     } finally {
       setMountingTorrentId(null)
     }
@@ -743,38 +767,57 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
                 <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start md:self-center">
                   {/* Add to Jellyfin Button */}
                   {torrent.magnet || torrent.id ? (
-                    <Button
-                      size="sm"
-                      className={`h-9 sm:h-8 px-3 sm:px-2.5 text-xs gap-1.5 transition-all font-semibold active:scale-95 shadow-sm ${
-                        mountedTorrentIds.has(torrent.info_hash || torrent.id)
-                          ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30"
-                          : "bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 hover:text-white"
-                      }`}
-                      disabled={mountingTorrentId === (torrent.info_hash || torrent.id)}
-                      onClick={(e) => handleStreamToJellyfin(torrent, e)}
-                      title={
-                        mountedTorrentIds.has(torrent.info_hash || torrent.id)
-                          ? "Открыть в Jellyfin"
-                          : "Добавить в библиотеку Jellyfin"
-                      }
-                    >
-                      {mountingTorrentId === (torrent.info_hash || torrent.id) ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Монтирование...</span>
-                        </>
-                      ) : mountedTorrentIds.has(torrent.info_hash || torrent.id) ? (
-                        <>
-                          <Check className="h-3.5 w-3.5 text-emerald-400" />
-                          <span>В Jellyfin</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-3.5 w-3.5 text-indigo-400" />
-                          <span>Добавить</span>
-                        </>
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        size="sm"
+                        className={`h-9 sm:h-8 px-3 sm:px-2.5 text-xs gap-1.5 transition-all font-semibold active:scale-95 shadow-sm ${
+                          mountErrors[torrent.info_hash || torrent.id]
+                            ? "bg-rose-600/20 text-rose-300 border border-rose-500/40 hover:bg-rose-600/30"
+                            : mountedTorrentIds.has(torrent.info_hash || torrent.id)
+                            ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30"
+                            : "bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 hover:text-white"
+                        }`}
+                        disabled={mountingTorrentId === (torrent.info_hash || torrent.id)}
+                        onClick={(e) => handleStreamToJellyfin(torrent, e)}
+                        title={
+                          mountErrors[torrent.info_hash || torrent.id]
+                            ? `Ошибка: ${mountErrors[torrent.info_hash || torrent.id]}. Нажмите, чтобы повторить.`
+                            : mountedTorrentIds.has(torrent.info_hash || torrent.id)
+                            ? "Открыть в Jellyfin"
+                            : "Добавить в библиотеку Jellyfin"
+                        }
+                      >
+                        {mountingTorrentId === (torrent.info_hash || torrent.id) ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Монтирование...</span>
+                          </>
+                        ) : mountErrors[torrent.info_hash || torrent.id] ? (
+                          <>
+                            <AlertCircle className="h-3.5 w-3.5 text-rose-400" />
+                            <span>Повторить</span>
+                          </>
+                        ) : mountedTorrentIds.has(torrent.info_hash || torrent.id) ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>В Jellyfin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3.5 w-3.5 text-indigo-400" />
+                            <span>Добавить</span>
+                          </>
+                        )}
+                      </Button>
+                      {mountErrors[torrent.info_hash || torrent.id] && (
+                        <span
+                          className="text-[10px] text-rose-400 max-w-[170px] truncate"
+                          title={mountErrors[torrent.info_hash || torrent.id]}
+                        >
+                          {mountErrors[torrent.info_hash || torrent.id]}
+                        </span>
                       )}
-                    </Button>
+                    </div>
                   ) : null}
 
                   {/* Magnet Button */}

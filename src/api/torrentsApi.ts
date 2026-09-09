@@ -39,6 +39,7 @@ export interface TorrentResult {
 export interface TorrentsQueryParams {
   q?: string
   imdb_id?: string
+  type?: string
   refresh_cache?: boolean
   limit?: number
   season?: number
@@ -55,8 +56,10 @@ export const torrentsApi = createApi({
         const queryParams: Record<string, string> = {}
         if (params.q) queryParams.q = params.q
         if (params.imdb_id) queryParams.imdb_id = params.imdb_id
+        if (params.type) queryParams.type = params.type
         if (params.refresh_cache) queryParams.refresh_cache = 'true'
         if (params.limit) queryParams.limit = params.limit.toString()
+
 
         return {
           url: 'torrents',
@@ -128,10 +131,11 @@ export const torrentsApi = createApi({
         { type: 'MountStatus', id: arg.tconst || 'all' },
       ],
     }),
-    getTrackerHotlist: builder.query<FeedShelf, { type?: 'movie' | 'tv'; page?: number; limit?: number }>({
+    getTrackerHotlist: builder.query<FeedShelf, { type?: string; quality?: string; page?: number; limit?: number }>({
       query: (params) => {
         const queryParams: Record<string, string> = {}
         if (params.type) queryParams.type = params.type
+        if (params.quality) queryParams.quality = params.quality
         if (params.page) queryParams.page = params.page.toString()
         if (params.limit) queryParams.limit = params.limit.toString()
         return {
@@ -141,6 +145,7 @@ export const torrentsApi = createApi({
       },
       keepUnusedDataFor: 600,
     }),
+
   }),
 })
 

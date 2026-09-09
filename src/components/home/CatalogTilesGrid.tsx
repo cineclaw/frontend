@@ -36,6 +36,36 @@ const TILES: CatalogTile[] = [
     borderHover: 'hover:border-emerald-500/50 hover:shadow-emerald-950/40',
   },
   {
+    id: 'uhd_4k',
+    title: '4K UHD Кинозал',
+    subtitle: 'Релизы в ультравысоком разрешении 2160p HDR & Dolby Vision',
+    badge: '4K HDR / DV',
+    icon: Sparkles,
+    iconColor: 'text-amber-300',
+    gradient: 'from-amber-950/40 via-yellow-950/20 to-cinema-950',
+    borderHover: 'hover:border-amber-500/50 hover:shadow-amber-950/40',
+  },
+  {
+    id: 'anime_hub',
+    title: 'Аниме & Мультипликация',
+    subtitle: 'Свежие онгоинги, анимационные шедевры и культовые франшизы',
+    badge: 'Онгоинги & Хиты',
+    icon: Tv,
+    iconColor: 'text-pink-400',
+    gradient: 'from-pink-950/35 via-purple-950/20 to-cinema-950',
+    borderHover: 'hover:border-pink-500/50 hover:shadow-pink-950/40',
+  },
+  {
+    id: 'doc_hub',
+    title: 'Документальное кино',
+    subtitle: 'Природа, наука, космос и история от BBC, Discovery и NatGeo',
+    badge: 'Наука & Природа',
+    icon: Film,
+    iconColor: 'text-emerald-300',
+    gradient: 'from-emerald-950/35 via-teal-950/20 to-cinema-950',
+    borderHover: 'hover:border-emerald-500/50 hover:shadow-emerald-950/40',
+  },
+  {
     id: 'apple_tv',
     title: 'Apple TV+ Originals',
     subtitle: 'Silo, Severance, Ted Lasso, Slow Horses, Foundation',
@@ -118,6 +148,7 @@ const TILES: CatalogTile[] = [
 ]
 
 export function CatalogTilesGrid() {
+
   const dispatch = useAppDispatch()
   const selectedMediaType = useAppSelector((state) => state.search.selectedMediaType)
 
