@@ -1,4 +1,5 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
+import { createApi } from '@reduxjs/toolkit/query/react'
+import { baseQueryWithAuth } from './baseQuery'
 import type {
   SearchQueryParams,
   SearchResponse,
@@ -12,7 +13,7 @@ import type {
 
 export const moviesApi = createApi({
   reducerPath: 'moviesApi',
-  baseQuery: fetchBaseQuery({ baseUrl: '/' }),
+  baseQuery: baseQueryWithAuth,
   tagTypes: ['Movies', 'Status', 'Series', 'Person', 'Feeds'],
   endpoints: (builder) => ({
     searchMovies: builder.query<SearchResponse, SearchQueryParams>({

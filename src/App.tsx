@@ -10,11 +10,13 @@ import { MovieModal } from "@/components/movie/MovieModal"
 import { PersonModal } from "@/components/person/PersonModal"
 import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
+import { LoginModal } from "@/components/auth/LoginModal"
 import { toggleFiltersOpen } from "@/store/searchSlice"
 
 export default function App() {
   const dispatch = useAppDispatch()
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false)
+  const { isAuthenticated } = useAppSelector((state) => state.auth)
   const { debouncedQuery, filters, isFiltersOpen } = useAppSelector(
     (state) => state.search
   )
@@ -34,7 +36,7 @@ export default function App() {
       limit: filters.limit,
     },
     {
-      skip: !debouncedQuery.trim(),
+      skip: !debouncedQuery.trim() || !isAuthenticated,
     }
   )
 
@@ -147,6 +149,9 @@ export default function App() {
         isOpen={isDiagnosticOpen}
         onClose={handleCloseDiagnostic}
       />
+
+      {/* Authentication Login Screen */}
+      <LoginModal isOpen={!isAuthenticated} />
     </div>
   )
 }

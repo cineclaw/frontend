@@ -1,4 +1,5 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
+import { createApi } from '@reduxjs/toolkit/query/react'
+import { baseQueryWithAuth } from './baseQuery'
 
 export interface TorrentSource {
   tracker: 'rutor' | 'nnmclub' | 'rutracker' | string
@@ -45,7 +46,7 @@ export interface TorrentsQueryParams {
 
 export const torrentsApi = createApi({
   reducerPath: 'torrentsApi',
-  baseQuery: fetchBaseQuery({ baseUrl: '/' }),
+  baseQuery: baseQueryWithAuth,
   tagTypes: ['Torrents', 'MountStatus'],
   endpoints: (builder) => ({
     getTorrents: builder.query<TorrentResult[], TorrentsQueryParams>({

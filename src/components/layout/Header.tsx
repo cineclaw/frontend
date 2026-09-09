@@ -1,5 +1,8 @@
-import { Activity, Sparkles } from "lucide-react"
+import { Activity, Sparkles, LogOut, User } from "lucide-react"
 import { useGetStatusQuery } from "@/api/moviesApi"
+import { useLogoutMutation } from "@/api/authApi"
+import { useAppDispatch, useAppSelector } from "@/store/store"
+import { logout } from "@/store/authSlice"
 import { Badge } from "@/components/ui/badge"
 
 interface HeaderProps {
@@ -9,6 +12,17 @@ interface HeaderProps {
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "1.0.0"
 
 export function Header({ onOpenDiagnostic }: HeaderProps) {
+  const dispatch = useAppDispatch()
+  const { isAuthenticated, username } = useAppSelector((state) => state.auth)
+  const [logoutMutation] = useLogoutMutation()
+
+  const handleLogout = async () => {
+    try {
+      await logoutMutation().unwrap()
+    } catch {}
+    dispatch(logout())
+  }
+
   const { data: status, isError, isLoading } = useGetStatusQuery(undefined, {
     pollingInterval: 15000,
   })
@@ -82,6 +96,19 @@ export function Header({ onOpenDiagnostic }: HeaderProps) {
             <Sparkles className="h-3 w-3" />
             <span>Tantivy & Fuzzy</span>
           </Badge>
+
+          {isAuthenticated && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title={`Выйти из учётной записи (${username || "admin"})`}
+              className="flex items-center space-x-1.5 rounded-full border border-border/60 bg-cinema-900/90 px-2.5 py-1 text-xs text-cinema-400 hover:text-red-400 hover:border-red-500/40 hover:bg-red-500/10 transition-all cursor-pointer focus:outline-none shadow-sm"
+            >
+              <User className="h-3.5 w-3.5 text-cinema-400 hidden sm:inline" />
+              <span className="text-[11px] font-medium hidden md:inline">{username || "admin"}</span>
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </header>

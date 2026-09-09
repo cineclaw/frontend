@@ -9,7 +9,7 @@ import {
   AlertCircle,
   ChevronRight,
 } from "lucide-react"
-import { useAppDispatch } from "@/store/store"
+import { useAppDispatch, useAppSelector } from "@/store/store"
 import { setSelectedMovie, setSelectedShelfId } from "@/store/searchSlice"
 import {
   useGetHomeFeedsQuery,
@@ -27,7 +27,10 @@ const SHELF_ICONS: Record<string, React.ElementType> = {
 
 export function HomeShelves() {
   const dispatch = useAppDispatch()
-  const { data: shelves, isLoading, isError } = useGetHomeFeedsQuery()
+  const { isAuthenticated } = useAppSelector((state) => state.auth)
+  const { data: shelves, isLoading, isError } = useGetHomeFeedsQuery(undefined, {
+    skip: !isAuthenticated,
+  })
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
   const [resolvingId, setResolvingId] = useState<number | null>(null)
 
