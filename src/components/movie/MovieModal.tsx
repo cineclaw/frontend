@@ -61,10 +61,15 @@ export function MovieModal() {
     activeMovie?.tconst ?? "",
     { skip: !activeMovie }
   )
-  const { data: metadata } = useGetMovieMetadataQuery(
+  const {
+    currentData: metadata,
+    isLoading: isMetadataLoading,
+    isFetching: isMetadataFetching,
+  } = useGetMovieMetadataQuery(
     activeMovie?.tconst ?? "",
     { skip: !activeMovie }
   )
+  const isMetadataBusy = isMetadataLoading || (isMetadataFetching && !metadata)
   const [unmountTorrent, { isLoading: isUnmounting }] = useUnmountTorrentMutation()
 
   // Lock background body scroll and handle browser back button / gestures on mobile
@@ -385,24 +390,38 @@ export function MovieModal() {
               )}
 
               {/* Metadata Section: Overview / Synopsis */}
-              <MovieOverview overview={metadata?.overview} className="pt-2" />
+              <MovieOverview
+                overview={metadata?.overview}
+                isLoading={isMetadataBusy}
+                className="pt-2"
+              />
 
               {/* Metadata Section: Crew (Director, Screenplay, Creator) */}
-              <MovieCrewBadges crew={metadata?.crew} className="pt-1" />
+              <MovieCrewBadges
+                crew={metadata?.crew}
+                isLoading={isMetadataBusy}
+                className="pt-1"
+              />
 
               {/* Metadata Section: Trailers & Teasers */}
               <MovieTrailers
                 videos={metadata?.videos}
                 onSelectTrailer={handleSelectTrailer}
+                isLoading={isMetadataBusy}
                 className="pt-2"
               />
 
               {/* Metadata Section: Cast */}
-              <MovieCast cast={metadata?.cast} className="pt-2" />
+              <MovieCast
+                cast={metadata?.cast}
+                isLoading={isMetadataBusy}
+                className="pt-2"
+              />
 
               {/* Torrents List Section */}
               <div className="w-full min-w-0 pt-3">
                 <TorrentList
+                  key={activeMovie.tconst}
                   query={mainTitle}
                   imdbId={activeMovie.tconst}
                   year={activeMovie.year}
@@ -500,10 +519,18 @@ export function MovieModal() {
                 )}
 
                 {/* Overview / Synopsis */}
-                <MovieOverview overview={metadata?.overview} className="mt-3.5" />
+                <MovieOverview
+                  overview={metadata?.overview}
+                  isLoading={isMetadataBusy}
+                  className="mt-3.5"
+                />
 
                 {/* Crew Details */}
-                <MovieCrewBadges crew={metadata?.crew} className="mt-3" />
+                <MovieCrewBadges
+                  crew={metadata?.crew}
+                  isLoading={isMetadataBusy}
+                  className="mt-3"
+                />
 
                 {/* Votes Metric */}
                 {activeMovie.num_votes > 0 && (
@@ -624,18 +651,21 @@ export function MovieModal() {
           <MovieTrailers
             videos={metadata?.videos}
             onSelectTrailer={setActiveTrailer}
+            isLoading={isMetadataBusy}
             className="w-full min-w-0 pt-4 border-t border-border/50"
           />
 
           {/* Full-width section: Cast */}
           <MovieCast
             cast={metadata?.cast}
+            isLoading={isMetadataBusy}
             className="w-full min-w-0 pt-4 border-t border-border/50"
           />
 
           {/* Full-width section: Torrents */}
           <div className="w-full min-w-0 pt-4 border-t border-border/50">
             <TorrentList
+              key={activeMovie.tconst}
               query={mainTitle}
               imdbId={activeMovie.tconst}
               year={activeMovie.year}

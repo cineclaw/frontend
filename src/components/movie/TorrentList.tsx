@@ -40,12 +40,17 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
   const [copiedMagnet, setCopiedMagnet] = useState<string | null>(null)
 
   // Fetch seasons metadata from TMDB (via imdb-indexer) for TV series
-  const { data: seriesData } = useGetSeriesSeasonsQuery(imdbId, {
+  const { currentData: seriesData } = useGetSeriesSeasonsQuery(imdbId, {
     skip: !isSeries,
   })
 
   // Initial query with bbolt cache on backend
-  const { data: torrents, isLoading, isError, isFetching } = useGetTorrentsQuery({
+  const {
+    currentData: torrents,
+    isLoading,
+    isError,
+    isFetching,
+  } = useGetTorrentsQuery({
     q: query,
     imdb_id: imdbId,
     limit: 100,

@@ -7,11 +7,34 @@ import { setSelectedPersonId } from "@/store/searchSlice"
 // --- Overview / Synopsis Component ---
 interface MovieOverviewProps {
   overview?: string | null
+  isLoading?: boolean
   className?: string
 }
 
-export function MovieOverview({ overview, className = "" }: MovieOverviewProps) {
+export function MovieOverview({
+  overview,
+  isLoading = false,
+  className = "",
+}: MovieOverviewProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+
+  if (isLoading) {
+    return (
+      <div className={`space-y-2 text-left ${className}`}>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Описание
+          </h3>
+          <div className="h-2 w-10 rounded-full bg-cinema-800/80 animate-pulse" />
+        </div>
+        <div className="space-y-1.5">
+          <div className="h-3.5 w-full rounded bg-cinema-850/80 animate-pulse" />
+          <div className="h-3.5 w-[92%] rounded bg-cinema-850/80 animate-pulse" />
+          <div className="h-3.5 w-[75%] rounded bg-cinema-850/80 animate-pulse" />
+        </div>
+      </div>
+    )
+  }
 
   if (!overview || overview.trim() === "") return null
 
@@ -49,6 +72,7 @@ export function MovieOverview({ overview, className = "" }: MovieOverviewProps) 
 // --- Crew Badges Component ---
 interface MovieCrewBadgesProps {
   crew?: CrewMember[] | null
+  isLoading?: boolean
   className?: string
 }
 
@@ -93,8 +117,24 @@ const MOVIE_JOB_PRIORITY = [
   "Editor",
 ]
 
-export function MovieCrewBadges({ crew, className = "" }: MovieCrewBadgesProps) {
+export function MovieCrewBadges({
+  crew,
+  isLoading = false,
+  className = "",
+}: MovieCrewBadgesProps) {
   const dispatch = useAppDispatch()
+
+  if (isLoading) {
+    return (
+      <div className={`space-y-1.5 text-left ${className}`}>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <div className="h-4 w-36 rounded-md bg-cinema-850/70 border border-border/30 animate-pulse" />
+          <div className="h-4 w-44 rounded-md bg-cinema-850/70 border border-border/30 animate-pulse" />
+        </div>
+      </div>
+    )
+  }
+
   if (!crew || crew.length === 0) return null
 
   const isTvShow = crew.some((m) => m.job === "Creator")
@@ -162,6 +202,7 @@ export function MovieCrewBadges({ crew, className = "" }: MovieCrewBadgesProps) 
 // --- Cast Avatar Carousel ---
 interface MovieCastProps {
   cast?: CastMember[] | null
+  isLoading?: boolean
   className?: string
 }
 
@@ -207,7 +248,33 @@ function CastAvatar({ member }: { member: CastMember }) {
   )
 }
 
-export function MovieCast({ cast, className = "" }: MovieCastProps) {
+export function MovieCast({
+  cast,
+  isLoading = false,
+  className = "",
+}: MovieCastProps) {
+  if (isLoading) {
+    return (
+      <div className={`space-y-2.5 text-left ${className}`}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Users className="h-3.5 w-3.5 text-primary" />
+          <span>В главных ролях</span>
+          <div className="h-2.5 w-8 rounded-full bg-cinema-800/80 animate-pulse" />
+        </div>
+
+        {/* Horizontal swipeable skeleton row */}
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="flex flex-col items-center w-16 sm:w-20 shrink-0 space-y-1.5">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-cinema-850/80 border border-border/40 animate-pulse" />
+              <div className="h-2.5 w-12 rounded bg-cinema-850/80 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (!cast || cast.length === 0) return null
 
   return (
@@ -234,14 +301,38 @@ export function MovieCast({ cast, className = "" }: MovieCastProps) {
 interface MovieTrailersProps {
   videos?: VideoItem[] | null
   onSelectTrailer: (video: VideoItem) => void
+  isLoading?: boolean
   className?: string
 }
 
 export function MovieTrailers({
   videos,
   onSelectTrailer,
+  isLoading = false,
   className = "",
 }: MovieTrailersProps) {
+  if (isLoading) {
+    return (
+      <div className={`space-y-2.5 text-left ${className}`}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Film className="h-3.5 w-3.5 text-primary" />
+          <span>Трейлеры и видео</span>
+          <div className="h-2.5 w-8 rounded-full bg-cinema-800/80 animate-pulse" />
+        </div>
+
+        {/* Horizontal swipeable skeleton cards */}
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
+          {[1, 2].map((i) => (
+            <div
+              key={i}
+              className="w-44 sm:w-52 aspect-video shrink-0 rounded-xl bg-cinema-850/80 border border-border/40 animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (!videos || videos.length === 0) return null
 
   return (
