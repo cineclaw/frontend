@@ -41,6 +41,7 @@ import {
   MovieCast,
   MovieTrailers,
 } from "./MovieMetadataSection"
+import { CriticsSection } from "./CriticsSection"
 import { TrailerModal } from "./TrailerModal"
 import type { VideoItem, MovieDoc } from "@/api/types"
 
@@ -389,6 +390,9 @@ export function MovieModal() {
                 </div>
               )}
 
+              {/* Critics & AI Consensus Section */}
+              <CriticsSection tconst={activeMovie.tconst} className="pt-2" />
+
               {/* Metadata Section: Overview / Synopsis */}
               <MovieOverview
                 overview={metadata?.overview}
@@ -517,6 +521,9 @@ export function MovieModal() {
                     ))}
                   </div>
                 )}
+
+                {/* Critics & AI Consensus Section */}
+                <CriticsSection tconst={activeMovie.tconst} className="mt-3.5" />
 
                 {/* Overview / Synopsis */}
                 <MovieOverview

@@ -4,6 +4,7 @@ import { type TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux
 import { moviesApi } from '../api/moviesApi'
 import { torrentsApi } from '../api/torrentsApi'
 import { authApi } from '../api/authApi'
+import { aiApi } from '../api/aiApi'
 import searchReducer from './searchSlice'
 import authReducer from './authSlice'
 
@@ -12,6 +13,7 @@ export const store = configureStore({
     [moviesApi.reducerPath]: moviesApi.reducer,
     [torrentsApi.reducerPath]: torrentsApi.reducer,
     [authApi.reducerPath]: authApi.reducer,
+    [aiApi.reducerPath]: aiApi.reducer,
     search: searchReducer,
     auth: authReducer,
   },
@@ -19,7 +21,8 @@ export const store = configureStore({
     getDefaultMiddleware().concat(
       moviesApi.middleware,
       torrentsApi.middleware,
-      authApi.middleware
+      authApi.middleware,
+      aiApi.middleware
     ),
 })
 
