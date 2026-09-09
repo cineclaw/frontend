@@ -1,0 +1,43 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(import.meta.dirname, './src'),
+    },
+  },
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/search': {
+        target: 'http://127.0.0.1:8090',
+        changeOrigin: true,
+      },
+      '/poster': {
+        target: 'http://127.0.0.1:8090',
+        changeOrigin: true,
+      },
+      '/status': {
+        target: 'http://127.0.0.1:8090',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:8090',
+        changeOrigin: true,
+      },
+      '/series': {
+        target: 'http://127.0.0.1:8090',
+        changeOrigin: true,
+      },
+      '/torrents': {
+        target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
+    },
+  },
+})
