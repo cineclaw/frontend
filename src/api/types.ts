@@ -161,6 +161,7 @@ export interface PersonDetailsResponse {
 
 export interface FeedItem {
   id: number
+  tconst?: string
   media_type: 'movie' | 'tv' | string
   title: string
   original_title?: string | null
@@ -170,16 +171,36 @@ export interface FeedItem {
   poster_path?: string | null
   backdrop_path?: string | null
   overview?: string | null
+  // Tracker Hotlist specific fields
+  seeds?: number
+  leeches?: number
+  tracker?: string
+  quality?: string
+  torrent_count?: number
 }
 
 export interface FeedShelf {
   id: string
   title: string
-  icon: 'flame' | 'film' | 'tv' | 'star' | string
+  icon: 'flame' | 'film' | 'tv' | 'star' | 'zap' | string
+  media_type?: 'movie' | 'tv' | string
   items: FeedItem[]
   page?: number
   total_pages?: number
   total_results?: number
 }
+
+export interface DiscoverCatalogParams {
+  type?: 'movie' | 'tv'
+  network?: 'apple' | 'hbo' | 'netflix' | 'amazon' | 'disney'
+  genres?: string
+  countries?: string
+  year_from?: number
+  year_to?: number
+  min_rating?: number
+  sort_by?: string
+  page?: number
+}
+
 
 

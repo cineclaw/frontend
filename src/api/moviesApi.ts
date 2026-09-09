@@ -9,6 +9,7 @@ import type {
   PersonDetailsResponse,
   MovieDoc,
   FeedShelf,
+  DiscoverCatalogParams,
 } from './types'
 
 export const moviesApi = createApi({
@@ -66,8 +67,31 @@ export const moviesApi = createApi({
       providesTags: ['Feeds'],
       keepUnusedDataFor: 1800, // 30 min cache
     }),
-    getShelfPage: builder.query<FeedShelf, { shelfId: string; page: number }>({
-      query: ({ shelfId, page }) => `api/feeds/${shelfId}?page=${page}`,
+    getShelfPage: builder.query<FeedShelf, { shelfId: string; type?: 'movie' | 'tv'; page: number }>({
+      query: ({ shelfId, type, page }) => {
+        let url = `api/feeds/${shelfId}?page=${page}`
+        if (type) url += `&type=${type}`
+        return url
+      },
+      keepUnusedDataFor: 1800,
+    }),
+    discoverCatalog: builder.query<FeedShelf, DiscoverCatalogParams>({
+      query: (params) => {
+        const queryParams: Record<string, string> = {}
+        if (params.type) queryParams.type = params.type
+        if (params.network) queryParams.network = params.network
+        if (params.genres) queryParams.genres = params.genres
+        if (params.countries) queryParams.countries = params.countries
+        if (params.year_from) queryParams.year_from = params.year_from.toString()
+        if (params.year_to) queryParams.year_to = params.year_to.toString()
+        if (params.min_rating) queryParams.min_rating = params.min_rating.toString()
+        if (params.sort_by) queryParams.sort_by = params.sort_by
+        if (params.page) queryParams.page = params.page.toString()
+        return {
+          url: 'api/catalog/discover',
+          params: queryParams,
+        }
+      },
       keepUnusedDataFor: 1800,
     }),
   }),
@@ -84,5 +108,7 @@ export const {
   useGetHomeFeedsQuery,
   useGetShelfPageQuery,
   useLazyGetShelfPageQuery,
+  useDiscoverCatalogQuery,
+  useLazyDiscoverCatalogQuery,
 } = moviesApi
 

@@ -9,6 +9,7 @@ interface SearchState {
   selectedMovie: MovieDoc | null
   selectedPersonId: number | null
   selectedShelfId: string | null
+  selectedMediaType: 'movie' | 'tv'
   isFiltersOpen: boolean
 }
 
@@ -28,6 +29,7 @@ const initialState: SearchState = {
   selectedMovie: null,
   selectedPersonId: null,
   selectedShelfId: null,
+  selectedMediaType: 'movie',
   isFiltersOpen: false,
 }
 
@@ -76,6 +78,9 @@ export const searchSlice = createSlice({
     setSelectedShelfId: (state, action: PayloadAction<string | null>) => {
       state.selectedShelfId = action.payload
     },
+    setSelectedMediaType: (state, action: PayloadAction<'movie' | 'tv'>) => {
+      state.selectedMediaType = action.payload
+    },
     toggleFiltersOpen: (state) => {
       state.isFiltersOpen = !state.isFiltersOpen
     },
@@ -98,6 +103,7 @@ export const {
   setSelectedMovie,
   setSelectedPersonId,
   setSelectedShelfId,
+  setSelectedMediaType,
   toggleFiltersOpen,
   setFiltersOpen,
 } = searchSlice.actions

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import {
   ArrowLeft,
   X,
@@ -7,22 +7,26 @@ import {
   Flame,
   Tv,
   Sparkles,
+  Zap,
+  SlidersHorizontal,
   Loader2,
   ChevronDown,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
-import { setSelectedShelfId, setSelectedMovie } from "@/store/searchSlice"
+import { setSelectedShelfId, setSelectedMovie, setSelectedMediaType } from "@/store/searchSlice"
 import {
   useGetHomeFeedsQuery,
   useLazyGetShelfPageQuery,
+  useLazyDiscoverCatalogQuery,
   useLazyResolveTmdbMovieQuery,
 } from "@/api/moviesApi"
+import { useLazyGetTrackerHotlistQuery } from "@/api/torrentsApi"
 import { useIsMobile } from "@/hooks/useMediaQuery"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { formatRating } from "@/lib/utils"
+import { CatalogFilterBar, type FilterState } from "@/components/catalog/CatalogFilterBar"
 import type { FeedItem, MovieDoc } from "@/api/types"
 
 const SHELF_ICONS: Record<string, React.ElementType> = {
@@ -30,42 +34,89 @@ const SHELF_ICONS: Record<string, React.ElementType> = {
   film: Film,
   tv: Tv,
   star: Sparkles,
+  zap: Zap,
+  sliders: SlidersHorizontal,
 }
 
 const DEFAULT_TITLES: Record<string, { title: string; icon: string }> = {
+  tracker_hotlist: { title: "Популярно на трекерах", icon: "zap" },
+  apple_tv: { title: "Apple TV+ Originals", icon: "star" },
+  hbo_max: { title: "HBO / Max Originals", icon: "tv" },
+  netflix: { title: "Netflix Хиты", icon: "film" },
+  amazon_prime: { title: "Amazon Prime Video", icon: "film" },
   trending: { title: "В тренде на этой неделе", icon: "flame" },
   digital: { title: "Свежие цифровые релизы", icon: "film" },
   popular_series: { title: "Популярные сериалы", icon: "tv" },
   top_rated: { title: "Шедевры всех времён", icon: "star" },
+  catalog_filter: { title: "Умный каталог & Фильтр", icon: "sliders" },
 }
 
 export function ShelfModal() {
   const dispatch = useAppDispatch()
   const selectedShelfId = useAppSelector((state) => state.search.selectedShelfId)
+  const selectedMediaType = useAppSelector((state) => state.search.selectedMediaType)
   const isMobile = useIsMobile()
 
-  // Pre-loaded home feeds for instantaneous page 1 display
+  // API hooks
   const { data: homeShelves } = useGetHomeFeedsQuery()
-  const [triggerGetPage, { isFetching }] = useLazyGetShelfPageQuery()
+  const [triggerGetPage, { isFetching: isFetchingShelf }] = useLazyGetShelfPageQuery()
+  const [triggerGetHotlist, { isFetching: isFetchingHotlist }] = useLazyGetTrackerHotlistQuery()
+  const [triggerDiscover, { isFetching: isFetchingDiscover }] = useLazyDiscoverCatalogQuery()
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
+
+  const isFetching = isFetchingShelf || isFetchingHotlist || isFetchingDiscover
 
   const [page, setPage] = useState<number>(1)
   const [items, setItems] = useState<FeedItem[]>([])
   const [totalPages, setTotalPages] = useState<number>(1)
   const [totalResults, setTotalResults] = useState<number | null>(null)
   const [resolvingId, setResolvingId] = useState<number | null>(null)
+  const [filters, setFilters] = useState<FilterState>({})
 
   // Current shelf metadata (title, icon)
   const shelfMeta = useMemo(() => {
     if (!selectedShelfId) return null
+    if (DEFAULT_TITLES[selectedShelfId]) {
+      return DEFAULT_TITLES[selectedShelfId]
+    }
     const found = homeShelves?.find((s) => s.id === selectedShelfId)
     if (found) {
       return { title: found.title, icon: found.icon }
     }
-    return DEFAULT_TITLES[selectedShelfId] || { title: "Список фильмов", icon: "film" }
+    return { title: "Список фильмов", icon: "film" }
   }, [selectedShelfId, homeShelves])
 
-  // Reset & load initial items when shelf opens
+  // Unified fetcher for any shelf type
+  const fetchItems = useCallback(
+    async (shelfId: string, mediaType: "movie" | "tv", targetPage: number, currentFilters: FilterState) => {
+      if (shelfId === "tracker_hotlist") {
+        const res = await triggerGetHotlist({ type: mediaType, page: targetPage }).unwrap()
+        return res
+      }
+      if (shelfId === "catalog_filter") {
+        const res = await triggerDiscover({
+          type: mediaType,
+          page: targetPage,
+          countries: currentFilters.country,
+          genres: currentFilters.genre,
+          year_from: currentFilters.yearRange?.from,
+          year_to: currentFilters.yearRange?.to,
+          min_rating: currentFilters.minRating,
+        }).unwrap()
+        return res
+      }
+      // Standard shelf from TMDB
+      const res = await triggerGetPage({
+        shelfId,
+        type: mediaType,
+        page: targetPage,
+      }).unwrap()
+      return res
+    },
+    [triggerGetHotlist, triggerDiscover, triggerGetPage]
+  )
+
+  // Reset & load initial items when shelf opens or mediaType/filters change
   useEffect(() => {
     if (!selectedShelfId) {
       setPage(1)
@@ -77,17 +128,7 @@ export function ShelfModal() {
 
     setPage(1)
 
-    // Check if we already have page 1 in homeShelves
-    const initialShelf = homeShelves?.find((s) => s.id === selectedShelfId)
-    if (initialShelf && initialShelf.items.length > 0) {
-      setItems(initialShelf.items)
-      if (initialShelf.total_pages) setTotalPages(initialShelf.total_pages)
-      if (initialShelf.total_results) setTotalResults(initialShelf.total_results)
-    }
-
-    // Always fetch fresh page 1 to ensure full pagination metadata
-    triggerGetPage({ shelfId: selectedShelfId, page: 1 })
-      .unwrap()
+    fetchItems(selectedShelfId, selectedMediaType, 1, filters)
       .then((res) => {
         if (res?.items) {
           setItems(res.items)
@@ -98,18 +139,18 @@ export function ShelfModal() {
       .catch((err) => {
         console.warn("Failed to fetch shelf page 1:", err)
       })
-  }, [selectedShelfId, homeShelves, triggerGetPage])
+  }, [selectedShelfId, selectedMediaType, filters, fetchItems])
 
   // Load next page
   const handleLoadMore = async () => {
     if (!selectedShelfId || isFetching) return
     const nextPage = page + 1
     try {
-      const res = await triggerGetPage({ shelfId: selectedShelfId, page: nextPage }).unwrap()
+      const res = await fetchItems(selectedShelfId, selectedMediaType, nextPage, filters)
       if (res?.items && res.items.length > 0) {
         setItems((prev) => {
-          const existingIds = new Set(prev.map((i) => i.id))
-          const newItems = res.items.filter((i) => !existingIds.has(i.id))
+          const existingIds = new Set(prev.map((i) => `${i.id}-${i.tconst || ""}`))
+          const newItems = res.items.filter((i) => !existingIds.has(`${i.id}-${i.tconst || ""}`))
           return [...prev, ...newItems]
         })
         setPage(nextPage)
@@ -122,48 +163,62 @@ export function ShelfModal() {
   }
 
   // Browser back-gesture support via history pushState
-  const hasPushedHistory = useRef(false)
+  const isClosingRef = useRef(false)
   useEffect(() => {
     if (selectedShelfId) {
+      isClosingRef.current = false
       window.history.pushState(
         { ...(window.history.state || {}), cineclawShelf: selectedShelfId },
         ""
       )
-      hasPushedHistory.current = true
 
       const handlePopState = (e: PopStateEvent) => {
         if (!e.state?.cineclawShelf) {
-          hasPushedHistory.current = false
           dispatch(setSelectedShelfId(null))
         }
       }
 
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          handleClose()
-        }
-      }
-
       window.addEventListener("popstate", handlePopState)
-      window.addEventListener("keydown", handleKeyDown)
 
       return () => {
         window.removeEventListener("popstate", handlePopState)
-        window.removeEventListener("keydown", handleKeyDown)
       }
     }
   }, [selectedShelfId, dispatch])
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
+    if (isClosingRef.current) return
+    isClosingRef.current = true
+    dispatch(setSelectedShelfId(null))
     if (window.history.state?.cineclawShelf) {
       window.history.back()
-    } else {
-      dispatch(setSelectedShelfId(null))
     }
-  }
+    setTimeout(() => {
+      isClosingRef.current = false
+    }, 300)
+  }, [dispatch])
 
   // Drill down into Cine-Claw movie card with torrents and streaming
   const handleSelectMovie = async (item: FeedItem) => {
+    // 1. If item already has a matched IMDb tconst from Tantivy matcher
+    if (item.tconst) {
+      const doc: MovieDoc = {
+        tconst: item.tconst,
+        title_ru: item.title,
+        title_orig: item.original_title || item.title,
+        title_primary: item.title,
+        russian_titles: [item.title],
+        year: item.year || null,
+        title_type: item.media_type === "tv" ? "tvSeries" : "movie",
+        rating: item.rating || null,
+        num_votes: item.vote_count || 0,
+        genres: [],
+      }
+      dispatch(setSelectedMovie(doc))
+      return
+    }
+
+    // 2. Otherwise resolve via TMDB
     try {
       setResolvingId(item.id)
       const res = await triggerResolve({
@@ -194,53 +249,78 @@ export function ShelfModal() {
     }
   }
 
-  const IconComponent = shelfMeta ? SHELF_ICONS[shelfMeta.icon] || Film : Film
+  const IconComponent = (shelfMeta?.icon && SHELF_ICONS[shelfMeta.icon]) || Film
 
-  // Main grid and controls content
+  // Render Inner Content
   const renderContent = () => (
-    <div className="space-y-6">
-      {/* Header section (desktop dialog header or mobile inner title) */}
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-4">
+    <div className="space-y-4">
+      {/* Shelf Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-cinema-850 border border-border/80 text-primary shrink-0 shadow-xs">
+          <div className="p-2 rounded-xl bg-cinema-850 border border-border/70 text-primary shadow-sm">
             <IconComponent className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
-              {shelfMeta?.title || "Список фильмов"}
-            </h2>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-              <span>Показано: {items.length}</span>
-              {totalResults && (
-                <>
-                  <span>•</span>
-                  <span>Всего в каталоге: {totalResults.toLocaleString("ru-RU")}</span>
-                </>
-              )}
-            </div>
+            <h1 className="text-lg sm:text-xl font-bold text-foreground tracking-tight flex items-center gap-2">
+              <span>{shelfMeta?.title || "Список фильмов"}</span>
+            </h1>
+            {totalResults !== null && (
+              <span className="text-xs text-muted-foreground">
+                {totalResults.toLocaleString("ru-RU")} наименований
+              </span>
+            )}
           </div>
         </div>
 
-        <Badge variant="secondary" className="font-mono text-xs px-2 py-0.5 text-zinc-300">
-          Стр. {page}
-        </Badge>
+        {/* Media type toggle [Фильмы | Сериалы] */}
+        <div className="flex items-center gap-1 p-0.5 bg-cinema-850/80 border border-white/5 rounded-xl self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => dispatch(setSelectedMediaType("movie"))}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              selectedMediaType === "movie"
+                ? "bg-red-600/90 text-white font-bold shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            🎬 Фильмы
+          </button>
+          <button
+            type="button"
+            onClick={() => dispatch(setSelectedMediaType("tv"))}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              selectedMediaType === "tv"
+                ? "bg-purple-600/90 text-white font-bold shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            📺 Сериалы
+          </button>
+        </div>
       </div>
 
-      {/* Movie Cards Grid */}
+      {/* Filter Bar (if catalog_filter shelf is active) */}
+      {selectedShelfId === "catalog_filter" && (
+        <CatalogFilterBar
+          mediaType={selectedMediaType}
+          filters={filters}
+          onChange={setFilters}
+        />
+      )}
+
+      {/* Grid of Movies / Series */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-        {items.map((item) => {
+        {items.map((item, index) => {
           const isResolving = resolvingId === item.id
           const posterUrl = item.poster_path
-            ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
+            ? item.poster_path.startsWith("/poster/")
+              ? item.poster_path
+              : `https://image.tmdb.org/t/p/w342${item.poster_path}`
             : null
-          const posterSrcSet = item.poster_path
-            ? `https://image.tmdb.org/t/p/w185${item.poster_path} 185w, https://image.tmdb.org/t/p/w342${item.poster_path} 342w, https://image.tmdb.org/t/p/w500${item.poster_path} 500w`
-            : undefined
-          const posterSizes = "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 200px"
 
           return (
             <button
-              key={`shelf-item-${item.id}`}
+              key={`${item.id}-${item.tconst || index}`}
               type="button"
               onClick={() => handleSelectMovie(item)}
               disabled={isResolving}
@@ -251,22 +331,20 @@ export function ShelfModal() {
                 {posterUrl ? (
                   <img
                     src={posterUrl}
-                    srcSet={posterSrcSet}
-                    sizes={posterSizes}
                     alt={item.title}
                     loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full object-cover object-center group-hover:scale-104 transition-transform duration-300"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground/40 gap-1.5 p-2 text-center bg-cinema-800">
-                    <Film className="h-9 w-9 opacity-40" />
-                    <span className="text-[11px] leading-tight text-zinc-500 line-clamp-2">
+                  <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center text-muted-foreground/60 bg-cinema-900">
+                    <Film className="h-8 w-8 mb-1 stroke-1" />
+                    <span className="text-[11px] line-clamp-2 leading-tight">
                       {item.title}
                     </span>
                   </div>
                 )}
 
-                {/* Top rating badge */}
+                {/* Rating Badge */}
                 {item.rating !== undefined && item.rating !== null && item.rating > 0 && (
                   <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-sm text-[10px] font-bold text-amber-400 border border-amber-500/20 shadow">
                     <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" />
@@ -274,8 +352,16 @@ export function ShelfModal() {
                   </div>
                 )}
 
-                {/* Media type badge (TV Series) */}
-                {item.media_type === "tv" && (
+                {/* Seeds Badge for Tracker Hotlist */}
+                {item.seeds !== undefined && item.seeds > 0 && (
+                  <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-950/90 backdrop-blur-sm text-[9px] font-bold text-emerald-400 border border-emerald-500/40 shadow">
+                    <Zap className="h-2.5 w-2.5 fill-emerald-400 text-emerald-400" />
+                    <span>{item.seeds} сидов</span>
+                  </div>
+                )}
+
+                {/* Media type badge if not seeds */}
+                {(!item.seeds || item.seeds <= 0) && item.media_type === "tv" && (
                   <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-sky-950/85 backdrop-blur-sm text-[9px] font-semibold text-sky-400 border border-sky-500/30">
                     Сериал
                   </div>
@@ -299,14 +385,18 @@ export function ShelfModal() {
                 </h3>
                 <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono">
                   <span>{item.year || "—"}</span>
-                  {item.vote_count > 0 && (
+                  {item.quality ? (
+                    <span className="text-[10px] text-emerald-400/90 truncate max-w-[90px]">
+                      {item.quality}
+                    </span>
+                  ) : item.vote_count > 0 ? (
                     <span className="text-zinc-500">
                       {item.vote_count >= 1000
                         ? `${(item.vote_count / 1000).toFixed(1)}k`
                         : item.vote_count}{" "}
                       оц.
                     </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </button>
@@ -338,7 +428,7 @@ export function ShelfModal() {
           </Button>
         ) : (
           <p className="text-xs text-muted-foreground font-medium">
-            Вы посмотрели все фильмы в этой категории
+            Вы посмотрели все релизы в этой категории
           </p>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { createApi } from '@reduxjs/toolkit/query/react'
 import { baseQueryWithAuth } from './baseQuery'
+import type { FeedShelf } from './types'
 
 export interface TorrentSource {
   tracker: 'rutor' | 'nnmclub' | 'rutracker' | string
@@ -127,6 +128,19 @@ export const torrentsApi = createApi({
         { type: 'MountStatus', id: arg.tconst || 'all' },
       ],
     }),
+    getTrackerHotlist: builder.query<FeedShelf, { type?: 'movie' | 'tv'; page?: number; limit?: number }>({
+      query: (params) => {
+        const queryParams: Record<string, string> = {}
+        if (params.type) queryParams.type = params.type
+        if (params.page) queryParams.page = params.page.toString()
+        if (params.limit) queryParams.limit = params.limit.toString()
+        return {
+          url: 'torrents/hotlist',
+          params: queryParams,
+        }
+      },
+      keepUnusedDataFor: 600,
+    }),
   }),
 })
 
@@ -187,6 +201,8 @@ export const {
   useGetMountedStatusQuery,
   useMountTorrentMutation,
   useUnmountTorrentMutation,
+  useGetTrackerHotlistQuery,
+  useLazyGetTrackerHotlistQuery,
 } = torrentsApi
 
 
