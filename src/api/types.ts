@@ -85,6 +85,15 @@ export interface SeriesSeasonsResponse {
   seasons: SeriesSeasonItem[]
 }
 
+export interface SeriesEpisodeItem {
+  season_number: number
+  episode_number: number
+  name: string
+  overview: string
+  air_date?: string
+  still_path?: string
+}
+
 export interface CastMember {
   id: number
   name: string

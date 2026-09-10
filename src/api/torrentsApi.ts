@@ -177,7 +177,15 @@ export const torrentsApi = createApi({
         method: 'POST',
         body,
       }),
-      invalidatesTags: (_result, _error, arg) => [{ type: 'MountStatus', id: `player-${arg.item_id}` }],
+      invalidatesTags: (_result, _error, arg) => [
+        { type: 'MountStatus', id: `player-${arg.item_id}` },
+        { type: 'MountStatus', id: 'ResumeList' },
+      ],
+    }),
+    getResumeItems: builder.query<ResumeItem[], void>({
+      query: () => 'api/stream/resume',
+      providesTags: () => [{ type: 'MountStatus', id: 'ResumeList' }],
+      keepUnusedDataFor: 30,
     }),
   }),
 })
@@ -279,6 +287,10 @@ export interface PlayerInfoResponse {
   current_episode?: number
   has_next_episode?: boolean
   next_episode?: EpisodeInfo
+  width?: number
+  height?: number
+  bitrate?: number
+  video_codec?: string
 }
 
 export interface PlaybackStartRequest {
@@ -301,11 +313,29 @@ export interface PlaybackStopRequest {
   item_id: string
   media_source_id?: string
   position_seconds: number
+  close_player?: boolean
+  is_played?: boolean
 }
 
 export interface PlaybackActionResponse {
   success: boolean
   message?: string
+}
+
+export interface ResumeItem {
+  item_id: string
+  tconst?: string
+  title: string
+  series_name?: string
+  episode_title?: string
+  media_type: 'Movie' | 'Episode'
+  season_number?: number
+  episode_number?: number
+  duration_seconds: number
+  resume_seconds: number
+  played_percentage: number
+  image_url: string
+  is_next_up?: boolean
 }
 
 export const {
@@ -322,6 +352,8 @@ export const {
   useReportPlayerStartMutation,
   useReportPlayerProgressMutation,
   useReportPlayerStopMutation,
+  useGetResumeItemsQuery,
+  useLazyGetResumeItemsQuery,
 } = torrentsApi
 
 

@@ -11,13 +11,14 @@ import { PersonModal } from "@/components/person/PersonModal"
 import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
 import { LoginModal } from "@/components/auth/LoginModal"
-import { toggleFiltersOpen } from "@/store/searchSlice"
+import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
+import { toggleFiltersOpen, closeCinemaPlayer } from "@/store/searchSlice"
 
 export default function App() {
   const dispatch = useAppDispatch()
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false)
   const { isAuthenticated } = useAppSelector((state) => state.auth)
-  const { debouncedQuery, filters, isFiltersOpen } = useAppSelector(
+  const { debouncedQuery, filters, isFiltersOpen, activePlayer } = useAppSelector(
     (state) => state.search
   )
 
@@ -152,6 +153,18 @@ export default function App() {
 
       {/* Authentication Login Screen */}
       <LoginModal isOpen={!isAuthenticated} />
+
+      {/* Embedded Cinema Video Player Modal (Global Root Portal) */}
+      {activePlayer && (
+        <CinemaPlayerModal
+          tconst={activePlayer.tconst}
+          title={activePlayer.title}
+          ruTitle={activePlayer.ruTitle}
+          initialSeason={activePlayer.initialSeason}
+          initialEpisode={activePlayer.initialEpisode}
+          onClose={() => dispatch(closeCinemaPlayer())}
+        />
+      )}
     </div>
   )
 }

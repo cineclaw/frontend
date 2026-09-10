@@ -10,10 +10,12 @@ import {
   Loader2,
   ArrowLeft,
   Play,
+  ChevronDown,
+  Layers,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
-import { setSelectedMovie } from "@/store/searchSlice"
+import { setSelectedMovie, openCinemaPlayer } from "@/store/searchSlice"
 import {
   Dialog,
   DialogContent,
@@ -24,6 +26,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MoviePoster } from "./MoviePoster"
 import { TorrentList } from "./TorrentList"
+import { QualityActionButtons } from "./QualityActionButtons"
+import { SeriesEpisodeBrowser } from "./SeriesEpisodeBrowser"
 import {
   formatRating,
   formatRuntime,
@@ -33,6 +37,7 @@ import {
 import {
   useGetMountedStatusQuery,
   useUnmountTorrentMutation,
+  useGetTorrentsQuery,
 } from "@/api/torrentsApi"
 import { useGetMovieMetadataQuery } from "@/api/moviesApi"
 import { useIsMobile } from "@/hooks/useMediaQuery"
@@ -44,12 +49,13 @@ import {
 } from "./MovieMetadataSection"
 import { CriticsSection } from "./CriticsSection"
 import { TrailerModal } from "./TrailerModal"
-import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
 import type { VideoItem, MovieDoc } from "@/api/types"
 
 export function MovieModal() {
   const dispatch = useAppDispatch()
   const movie = useAppSelector((state) => state.search.selectedMovie)
+  const activePlayer = useAppSelector((state) => state.search.activePlayer)
+  const isPlayerActive = Boolean(activePlayer)
   const lastMovieRef = useRef<MovieDoc | null>(null)
   if (movie) {
     lastMovieRef.current = movie
@@ -58,8 +64,20 @@ export function MovieModal() {
 
   const [showConfirmUnmount, setShowConfirmUnmount] = useState(false)
   const [activeTrailer, setActiveTrailer] = useState<VideoItem | null>(null)
-  const [isCinemaPlayerOpen, setIsCinemaPlayerOpen] = useState(false)
   const isMobile = useIsMobile()
+
+  const isSeries = activeMovie?.title_type === "tvSeries" || activeMovie?.title_type === "tvMiniSeries"
+  const mainTitle = activeMovie?.title_ru || activeMovie?.title_primary || activeMovie?.title_orig || ""
+
+  const { data: torrents, isLoading: isLoadingTorrents } = useGetTorrentsQuery(
+    {
+      q: mainTitle,
+      imdb_id: activeMovie?.tconst || "",
+      type: isSeries ? "tv" : "movie",
+      limit: 100,
+    },
+    { skip: !activeMovie?.tconst }
+  )
 
   const { data: mountStatus } = useGetMountedStatusQuery(
     activeMovie?.tconst ?? "",
@@ -157,13 +175,9 @@ export function MovieModal() {
     }
   }
 
-  const mainTitle = activeMovie.title_ru || activeMovie.title_primary || activeMovie.title_orig
   const runtimeFormatted = formatRuntime(activeMovie.runtime_minutes)
   const posterUrl = `/poster/${activeMovie.tconst}?size=w500`
   const imdbUrl = `https://www.imdb.com/title/${activeMovie.tconst}/`
-  const isSeries =
-    activeMovie.title_type.toLowerCase() === "tvseries" ||
-    activeMovie.title_type.toLowerCase() === "tvminiseries"
 
   // -------------------------------------------------------------
   // MOBILE VIEW: Dedicated Full-Screen Screen with Smooth Slide Transitions
@@ -355,7 +369,15 @@ export function MovieModal() {
 
                   <Button
                     size="sm"
-                    onClick={() => setIsCinemaPlayerOpen(true)}
+                    onClick={() =>
+                      dispatch(
+                        openCinemaPlayer({
+                          tconst: activeMovie.tconst,
+                          title: mainTitle,
+                          ruTitle: activeMovie.title_ru || undefined,
+                        })
+                      )
+                    }
                     className="h-8 px-3 text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-black hover:from-emerald-400 hover:to-teal-400 gap-1.5 shadow-md shadow-emerald-950/50 active:scale-95 shrink-0"
                   >
                     <Play className="h-3.5 w-3.5 fill-current" />
@@ -385,6 +407,30 @@ export function MovieModal() {
                   </div>
                 </div>
               )}
+
+              {/* Primary Action Buttons (Quality & Watch / Add) or Series Browser */}
+              <div className="w-full min-w-0 pt-2">
+                {isSeries ? (
+                  <SeriesEpisodeBrowser
+                    tconst={activeMovie.tconst}
+                    title={mainTitle}
+                    ruTitle={activeMovie.title_ru || undefined}
+                    year={activeMovie.year}
+                    torrents={torrents}
+                    isLoadingTorrents={isLoadingTorrents}
+                  />
+                ) : (
+                  <QualityActionButtons
+                    tconst={activeMovie.tconst}
+                    title={mainTitle}
+                    ruTitle={activeMovie.title_ru || undefined}
+                    year={activeMovie.year}
+                    isSeries={false}
+                    torrents={torrents}
+                    isLoadingTorrents={isLoadingTorrents}
+                  />
+                )}
+              </div>
 
               {/* Critics & AI Consensus Section */}
               <CriticsSection tconst={activeMovie.tconst} className="pt-2" />
@@ -418,31 +464,45 @@ export function MovieModal() {
                 className="pt-2"
               />
 
-              {/* Torrents List Section */}
-              <div className="w-full min-w-0 pt-3">
-                <TorrentList
-                  key={activeMovie.tconst}
-                  query={mainTitle}
-                  imdbId={activeMovie.tconst}
-                  year={activeMovie.year}
-                  isSeries={isSeries}
-                  onPlayMedia={() => setIsCinemaPlayerOpen(true)}
-                />
+              {/* Collapsible Manual Torrent List (Optional for power users) */}
+              <div className="w-full min-w-0 pt-2">
+                <details className="group rounded-2xl border border-border/70 bg-cinema-900/60 overflow-hidden transition-colors">
+                  <summary className="px-4 py-3 cursor-pointer select-none font-bold text-xs text-zinc-400 hover:text-white flex items-center justify-between transition-colors">
+                    <span className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400" />
+                      Ручной выбор раздачи
+                      {torrents && torrents.length > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-850 text-zinc-400 font-mono border border-border/60">
+                          {torrents.length}
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown className="w-4 h-4 transition-transform duration-200 group-open:rotate-180 text-zinc-500" />
+                  </summary>
+                  <div className="p-3 sm:p-4 border-t border-border/40">
+                    <TorrentList
+                      key={activeMovie.tconst}
+                      query={mainTitle}
+                      imdbId={activeMovie.tconst}
+                      year={activeMovie.year}
+                      isSeries={isSeries}
+                      onPlayMedia={() =>
+                        dispatch(
+                          openCinemaPlayer({
+                            tconst: activeMovie.tconst,
+                            title: mainTitle,
+                            ruTitle: activeMovie.title_ru || undefined,
+                          })
+                        )
+                      }
+                    />
+                  </div>
+                </details>
               </div>
             </div>
 
             {/* Embedded Trailer Modal */}
             <TrailerModal video={activeTrailer} onClose={handleCloseTrailer} />
-
-            {/* Embedded Cinema Video Player Modal */}
-            {isCinemaPlayerOpen && (
-              <CinemaPlayerModal
-                tconst={activeMovie.tconst}
-                title={mainTitle}
-                ruTitle={activeMovie.title_ru || undefined}
-                onClose={() => setIsCinemaPlayerOpen(false)}
-              />
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -455,9 +515,9 @@ export function MovieModal() {
   return (
     <>
       <Dialog
-        open={!!movie}
+        open={!!movie && !isPlayerActive}
         onOpenChange={(open) => {
-          if (!open) dispatch(setSelectedMovie(null))
+          if (!open && !isPlayerActive) dispatch(setSelectedMovie(null))
         }}
       >
         <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-cinema-900 border-border/80 p-4 sm:p-6 rounded-2xl shadow-2xl custom-scrollbar">
@@ -601,7 +661,15 @@ export function MovieModal() {
                       {!showConfirmUnmount && (
                         <Button
                           size="sm"
-                          onClick={() => setIsCinemaPlayerOpen(true)}
+                          onClick={() =>
+                            dispatch(
+                              openCinemaPlayer({
+                                tconst: activeMovie.tconst,
+                                title: mainTitle,
+                                ruTitle: activeMovie.title_ru || undefined,
+                              })
+                            )
+                          }
                           className="h-7 px-3 text-xs gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold shadow-sm active:scale-95 transition-all"
                         >
                           <Play className="h-3.5 w-3.5 fill-current" />
@@ -671,6 +739,30 @@ export function MovieModal() {
             </div>
           </div>
 
+          {/* Primary Action Buttons (Quality & Watch / Add) or Series Browser */}
+          <div className="w-full min-w-0 pt-4 border-t border-border/50">
+            {isSeries ? (
+              <SeriesEpisodeBrowser
+                tconst={activeMovie.tconst}
+                title={mainTitle}
+                ruTitle={activeMovie.title_ru || undefined}
+                year={activeMovie.year}
+                torrents={torrents}
+                isLoadingTorrents={isLoadingTorrents}
+              />
+            ) : (
+              <QualityActionButtons
+                tconst={activeMovie.tconst}
+                title={mainTitle}
+                ruTitle={activeMovie.title_ru || undefined}
+                year={activeMovie.year}
+                isSeries={false}
+                torrents={torrents}
+                isLoadingTorrents={isLoadingTorrents}
+              />
+            )}
+          </div>
+
           {/* Full-width section: Trailers */}
           <MovieTrailers
             videos={metadata?.videos}
@@ -686,32 +778,46 @@ export function MovieModal() {
             className="w-full min-w-0 pt-4 border-t border-border/50"
           />
 
-          {/* Full-width section: Torrents */}
+          {/* Collapsible Manual Torrent List (Optional for power users) */}
           <div className="w-full min-w-0 pt-4 border-t border-border/50">
-            <TorrentList
-              key={activeMovie.tconst}
-              query={mainTitle}
-              imdbId={activeMovie.tconst}
-              year={activeMovie.year}
-              isSeries={isSeries}
-              onPlayMedia={() => setIsCinemaPlayerOpen(true)}
-            />
+            <details className="group rounded-2xl border border-border/70 bg-cinema-900/60 overflow-hidden transition-colors">
+              <summary className="px-4 py-3 cursor-pointer select-none font-bold text-xs text-zinc-400 hover:text-white flex items-center justify-between transition-colors">
+                <span className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400" />
+                  Ручной выбор раздачи
+                  {torrents && torrents.length > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cinema-850 text-zinc-400 font-mono border border-border/60">
+                      {torrents.length}
+                    </span>
+                  )}
+                </span>
+                <ChevronDown className="w-4 h-4 transition-transform duration-200 group-open:rotate-180 text-zinc-500" />
+              </summary>
+              <div className="p-3 sm:p-4 border-t border-border/40">
+                <TorrentList
+                  key={activeMovie.tconst}
+                  query={mainTitle}
+                  imdbId={activeMovie.tconst}
+                  year={activeMovie.year}
+                  isSeries={isSeries}
+                  onPlayMedia={() =>
+                    dispatch(
+                      openCinemaPlayer({
+                        tconst: activeMovie.tconst,
+                        title: mainTitle,
+                        ruTitle: activeMovie.title_ru || undefined,
+                      })
+                    )
+                  }
+                />
+              </div>
+            </details>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Embedded Trailer Modal */}
       <TrailerModal video={activeTrailer} onClose={() => setActiveTrailer(null)} />
-
-      {/* Embedded Cinema Video Player Modal */}
-      {isCinemaPlayerOpen && (
-        <CinemaPlayerModal
-          tconst={activeMovie.tconst}
-          title={mainTitle}
-          ruTitle={activeMovie.title_ru || undefined}
-          onClose={() => setIsCinemaPlayerOpen(false)}
-        />
-      )}
     </>
   )
 }

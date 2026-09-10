@@ -15,6 +15,7 @@ import {
 } from "@/api/moviesApi"
 import { formatRating } from "@/lib/utils"
 import { CatalogTilesGrid } from "./CatalogTilesGrid"
+import { ContinueWatchingShelf } from "./ContinueWatchingShelf"
 import type { FeedItem, MovieDoc } from "@/api/types"
 
 export function HomeShelves() {
@@ -86,6 +87,9 @@ export function HomeShelves() {
 
   return (
     <div className="space-y-6 pt-1 pb-8 w-full max-w-4xl mx-auto text-left">
+      {/* Continue Watching Shelf (Direct Jellyfin Resume Integration) */}
+      <ContinueWatchingShelf />
+
       {/* Featured Preview Shelf (Single Strip) */}
       {featuredShelf && featuredShelf.items && featuredShelf.items.length > 0 && (
         <section className="space-y-2.5 px-1 sm:px-2">

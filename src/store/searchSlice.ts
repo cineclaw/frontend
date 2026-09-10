@@ -1,6 +1,14 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { MovieDoc, SearchFilters } from '../api/types'
 
+export interface ActiveCinemaPlayer {
+  tconst: string
+  title: string
+  ruTitle?: string
+  initialSeason?: number
+  initialEpisode?: number
+}
+
 interface SearchState {
   query: string
   debouncedQuery: string
@@ -11,6 +19,7 @@ interface SearchState {
   selectedShelfId: string | null
   selectedMediaType: 'movie' | 'tv'
   isFiltersOpen: boolean
+  activePlayer: ActiveCinemaPlayer | null
 }
 
 const initialFilters: SearchFilters = {
@@ -31,6 +40,7 @@ const initialState: SearchState = {
   selectedShelfId: null,
   selectedMediaType: 'movie',
   isFiltersOpen: false,
+  activePlayer: null,
 }
 
 export const searchSlice = createSlice({
@@ -87,6 +97,12 @@ export const searchSlice = createSlice({
     setFiltersOpen: (state, action: PayloadAction<boolean>) => {
       state.isFiltersOpen = action.payload
     },
+    openCinemaPlayer: (state, action: PayloadAction<ActiveCinemaPlayer>) => {
+      state.activePlayer = action.payload
+    },
+    closeCinemaPlayer: (state) => {
+      state.activePlayer = null
+    },
   },
 })
 
@@ -106,6 +122,8 @@ export const {
   setSelectedMediaType,
   toggleFiltersOpen,
   setFiltersOpen,
+  openCinemaPlayer,
+  closeCinemaPlayer,
 } = searchSlice.actions
 
 export default searchSlice.reducer

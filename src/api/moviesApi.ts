@@ -5,6 +5,7 @@ import type {
   SearchResponse,
   StatusResponse,
   SeriesSeasonsResponse,
+  SeriesEpisodeItem,
   MovieMetadataResponse,
   PersonDetailsResponse,
   MovieDoc,
@@ -47,6 +48,11 @@ export const moviesApi = createApi({
       query: (tconst) => `api/series/${tconst}/seasons`,
       providesTags: (_result, _error, tconst) => [{ type: 'Series', id: tconst }],
       keepUnusedDataFor: 600, // 10 min cache
+    }),
+    getSeriesEpisodes: builder.query<SeriesEpisodeItem[], string>({
+      query: (tconst) => `api/series/${tconst}/episodes`,
+      providesTags: (_result, _error, tconst) => [{ type: 'Series', id: `episodes-${tconst}` }],
+      keepUnusedDataFor: 1800, // 30 min cache
     }),
     getMovieMetadata: builder.query<MovieMetadataResponse, string>({
       query: (tconst) => `api/movie/${tconst}/metadata`,
@@ -101,6 +107,8 @@ export const {
   useSearchMoviesQuery,
   useGetStatusQuery,
   useGetSeriesSeasonsQuery,
+  useGetSeriesEpisodesQuery,
+  useLazyGetSeriesEpisodesQuery,
   useGetMovieMetadataQuery,
   useGetPersonDetailsQuery,
   useResolveTmdbMovieQuery,

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import Hls from 'hls.js'
 import {
   Play,
@@ -19,16 +20,113 @@ import {
   PictureInPicture2,
   ChevronRight,
   Gauge,
+  Zap,
+  SlidersHorizontal,
 } from 'lucide-react'
 import {
   useGetPlayerInfoQuery,
   useReportPlayerStartMutation,
   useReportPlayerProgressMutation,
   useReportPlayerStopMutation,
+  useGetTorrentsQuery,
+  useMountTorrentMutation,
   type AudioTrack,
   type SubtitleTrack,
   type EpisodeInfo,
+  type PlayerInfoResponse,
+  type TorrentResult,
 } from '@/api/torrentsApi'
+import { classifyResolution, extractAudioLabel } from '@/lib/torrentSelector'
+import { formatBytes } from '@/lib/utils'
+
+export interface QualityPreset {
+  id: string
+  label: string
+  shortLabel: string
+  description: string
+  width?: number
+  height?: number
+  videoBitrate?: number
+  audioBitrate?: number
+  isOriginal?: boolean
+}
+
+export function buildQualityLadder(info: PlayerInfoResponse): QualityPreset[] {
+  const w = info.width || 0
+  const h = info.height || 0
+  const is4K = w >= 2500 || h >= 1400
+  const is1080p = !is4K && (w >= 1300 || h >= 750 || (w === 0 && h === 0))
+  const is720p = !is4K && !is1080p && (w >= 900 || h >= 500)
+
+  const ladder: QualityPreset[] = []
+
+  // 1. Original (Direct Stream copy for native codecs, highest bitrate transcode otherwise)
+  ladder.push({
+    id: 'original',
+    label: `Оригинал (${is4K ? '4K UHD' : is1080p ? '1080p FHD' : is720p ? '720p HD' : 'SD'})`,
+    shortLabel: is4K ? '4K' : is1080p ? '1080p' : is720p ? '720p' : 'SD',
+    description: 'Без сжатия • Direct Stream',
+    isOriginal: true,
+    videoBitrate: is4K ? 45000000 : is1080p ? 25000000 : is720p ? 15000000 : 8000000,
+    audioBitrate: 384000,
+  })
+
+  // 2. 1080p High (6 Mbps)
+  if (is4K || is1080p) {
+    ladder.push({
+      id: '1080p_high',
+      label: '1080p FHD (Высокое • 6 Мбит/с)',
+      shortLabel: '1080p HQ',
+      description: 'Высокая чёткость для ТВ и ПК',
+      width: 1920,
+      height: 1080,
+      videoBitrate: 6000000,
+      audioBitrate: 256000,
+    })
+  }
+
+  // 3. 1080p Standard / Web (3.5 Mbps)
+  if (is4K || is1080p) {
+    ladder.push({
+      id: '1080p_std',
+      label: '1080p FHD (Веб • 3.5 Мбит/с)',
+      shortLabel: '1080p',
+      description: 'Оптимально для веба и плавного потока',
+      width: 1920,
+      height: 1080,
+      videoBitrate: 3500000,
+      audioBitrate: 192000,
+    })
+  }
+
+  // 4. 720p HD (2.2 Mbps)
+  if (is4K || is1080p || is720p) {
+    ladder.push({
+      id: '720p',
+      label: '720p HD (Эконом • 2.2 Мбит/с)',
+      shortLabel: '720p',
+      description: 'Для мобильных сетей и слабого интернета',
+      width: 1280,
+      height: 720,
+      videoBitrate: 2200000,
+      audioBitrate: 192000,
+    })
+  }
+
+  // 5. 480p SD (1.2 Mbps)
+  ladder.push({
+    id: '480p',
+    label: '480p SD (Низкий трафик • 1.2 Мбит/с)',
+    shortLabel: '480p',
+    description: 'Минимальный расход трафика',
+    width: 854,
+    height: 480,
+    videoBitrate: 1200000,
+    audioBitrate: 128000,
+  })
+
+  return ladder
+}
 
 interface CinemaPlayerModalProps {
   tconst: string
@@ -62,11 +160,40 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [currentSeason, setCurrentSeason] = useState<number | undefined>(initialSeason)
   const [currentEpisode, setCurrentEpisode] = useState<number | undefined>(initialEpisode)
 
+  useEffect(() => {
+    if (initialSeason !== undefined) setCurrentSeason(initialSeason)
+    if (initialEpisode !== undefined) setCurrentEpisode(initialEpisode)
+  }, [initialSeason, initialEpisode])
+
   // Fetch player info from backend
-  const { data: playerInfo, isLoading, error } = useGetPlayerInfoQuery(
+  const { data: playerInfo, isLoading, error, refetch } = useGetPlayerInfoQuery(
     { tconst, season: currentSeason, episode: currentEpisode },
     { refetchOnMountOrArgChange: true }
   )
+
+  // Auto-retry polling if Jellyfin is still scanning the newly mounted library folder
+  const [syncRetryCount, setSyncRetryCount] = useState<number>(0)
+  const isSyncingWithJellyfin = Boolean(
+    !isLoading &&
+    playerInfo &&
+    !playerInfo.success &&
+    (playerInfo.error?.includes('сканирует') ||
+     playerInfo.error?.includes('серий') ||
+     playerInfo.error?.includes('Сезон') ||
+     playerInfo.error?.includes('смонтирован')) &&
+    syncRetryCount < 10
+  )
+  const isErrorState = Boolean(!isSyncingWithJellyfin && (error || (playerInfo && !playerInfo.success)))
+
+  useEffect(() => {
+    if (isSyncingWithJellyfin) {
+      const timer = setTimeout(() => {
+        setSyncRetryCount((prev) => prev + 1)
+        refetch()
+      }, 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [isSyncingWithJellyfin, refetch])
 
   const [reportStart] = useReportPlayerStartMutation()
   const [reportProgress] = useReportPlayerProgressMutation()
@@ -86,8 +213,6 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
   const [isBuffering, setIsBuffering] = useState<boolean>(true)
   const [showControls, setShowControls] = useState<boolean>(true)
-  const [hasResumed, setHasResumed] = useState<boolean>(false)
-  const [resumeToast, setResumeToast] = useState<{ show: boolean; time: number } | null>(null)
 
   // Audio / Subtitles / Speed / Drawer States
   const [selectedAudioIndex, setSelectedAudioIndex] = useState<number | null>(null)
@@ -97,8 +222,45 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [showSubtitleMenu, setShowSubtitleMenu] = useState<boolean>(false)
   const [showSpeedMenu, setShowSpeedMenu] = useState<boolean>(false)
   const [showEpisodesDrawer, setShowEpisodesDrawer] = useState<boolean>(false)
+  const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false)
+  const [qualityToast, setQualityToast] = useState<string | null>(null)
   const [nextEpisodePrompt, setNextEpisodePrompt] = useState<boolean>(false)
   const [nextCountdown, setNextCountdown] = useState<number>(10)
+
+  // Quality presets & ladder
+  const [selectedQualityId, setSelectedQualityId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('cineclaw_player_quality') || 'original'
+    } catch {
+      return 'original'
+    }
+  })
+
+  const qualityOptions = useMemo(() => {
+    return playerInfo ? buildQualityLadder(playerInfo) : []
+  }, [playerInfo])
+
+  const activeQuality = useMemo(() => {
+    return qualityOptions.find((q) => q.id === selectedQualityId) || qualityOptions[0] || null
+  }, [qualityOptions, selectedQualityId])
+
+  const prevQualityIdRef = useRef<string>(selectedQualityId)
+  useEffect(() => {
+    if (prevQualityIdRef.current !== selectedQualityId) {
+      playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
+      prevQualityIdRef.current = selectedQualityId
+    }
+  }, [selectedQualityId])
+
+  const handleQualityChange = useCallback((preset: QualityPreset) => {
+    setSelectedQualityId(preset.id)
+    setShowQualityMenu(false)
+    try {
+      localStorage.setItem('cineclaw_player_quality', preset.id)
+    } catch {}
+    setQualityToast(`Качество: ${preset.shortLabel}`)
+    setTimeout(() => setQualityToast(null), 2500)
+  }, [])
 
   // Double tap animation indicators
   const [tapRipple, setTapRipple] = useState<'left' | 'right' | null>(null)
@@ -109,6 +271,141 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     id: '',
     time: 0,
   })
+  const prevItemIdRef = useRef<string>('')
+
+  // 30-Second Buffering Stall Detection & Alternate Torrent Selector
+  const [showStallPrompt, setShowStallPrompt] = useState<boolean>(false)
+  const [showAlternateModal, setShowAlternateModal] = useState<boolean>(false)
+  const [isMountingAlternate, setIsMountingAlternate] = useState<boolean>(false)
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Resume Playback Prompt Dialog
+  const [showResumePrompt, setShowResumePrompt] = useState<boolean>(false)
+  const resumeDecisionMadeRef = useRef<boolean>(false)
+
+  // Fetch available torrents for this title and current season
+  const { data: rawTorrents, isLoading: isLoadingTorrents } = useGetTorrentsQuery(
+    { imdb_id: tconst, season: currentSeason },
+    { skip: !tconst }
+  )
+  const [mountTorrent] = useMountTorrentMutation()
+
+  // Strict sorting by seeds descending for alternate torrent picker
+  const sortedTorrentsBySeeds = useMemo(() => {
+    if (!rawTorrents || rawTorrents.length === 0) return []
+    let list = [...rawTorrents]
+
+    if (currentSeason !== undefined && currentSeason > 0) {
+      const seasonMatches = list.filter((t) => {
+        const seasons = t.seasons || []
+        return seasons.includes(currentSeason) || seasons.length === 0 || t.is_complete
+      })
+      if (seasonMatches.length > 0) {
+        list = seasonMatches
+      }
+    }
+
+    return list.sort((a, b) => (b.seeds || 0) - (a.seeds || 0))
+  }, [rawTorrents, currentSeason])
+
+  // Track continuous buffering / waiting time (trigger prompt after 30s)
+  useEffect(() => {
+    // If playing smoothly and not buffering, reset timer & prompt
+    if (isPlaying && !isBuffering && !isSyncingWithJellyfin) {
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current)
+        stallTimerRef.current = null
+      }
+      setShowStallPrompt(false)
+      return
+    }
+
+    // If waiting/buffering/syncing, start 30s countdown
+    if ((isBuffering || isSyncingWithJellyfin) && !showStallPrompt) {
+      if (!stallTimerRef.current) {
+        stallTimerRef.current = setTimeout(() => {
+          setShowStallPrompt(true)
+        }, 30000)
+      }
+    }
+
+    return () => {
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current)
+        stallTimerRef.current = null
+      }
+    }
+  }, [isPlaying, isBuffering, isSyncingWithJellyfin, showStallPrompt])
+
+  const handleSelectAlternateTorrent = async (torrent: TorrentResult) => {
+    setIsMountingAlternate(true)
+    setShowStallPrompt(false)
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
+
+    try {
+      await mountTorrent({
+        tconst,
+        title,
+        ru_title: ruTitle,
+        type: currentSeason !== undefined ? 'tvSeries' : 'movie',
+        season: currentSeason,
+        magnet: torrent.magnet,
+        tracker: torrent.tracker || (torrent.trackers && torrent.trackers[0]),
+        torrent_id: torrent.id,
+        details_url: torrent.details_url,
+        mode: 'add_version',
+        version_name: classifyResolution(torrent).toUpperCase(),
+        resolution: torrent.resolution,
+      }).unwrap()
+
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.removeAttribute('src')
+        videoRef.current.load()
+      }
+      setIsBuffering(true)
+      setIsPlaying(false)
+      setShowAlternateModal(false)
+      setSyncRetryCount(0)
+      playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
+      await refetch()
+    } catch (err) {
+      console.error('Failed to mount alternate torrent:', err)
+    } finally {
+      setIsMountingAlternate(false)
+    }
+  }
+
+  const handleClosePlayer = useCallback(() => {
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
+    const cur = currentItemRef.current
+    const video = videoRef.current
+    let liveTime = video && !isNaN(video.currentTime) && video.currentTime > 0 ? video.currentTime : (cur.time || currentTime)
+    if (!resumeDecisionMadeRef.current && (playerInfo?.resume_seconds ?? 0) > 15 && liveTime <= 5) {
+      liveTime = playerInfo!.resume_seconds!
+    }
+    const isFinished = duration > 0 && liveTime >= (duration - 30)
+    if (cur.id) {
+      reportStop({
+        item_id: cur.id,
+        media_source_id: cur.mediaSourceId,
+        position_seconds: liveTime,
+        close_player: true,
+        is_played: isFinished,
+      })
+    }
+    onClose()
+  }, [reportStop, onClose, currentTime, duration, playerInfo?.resume_seconds])
 
   // Keep ref updated for unload/stop reporting
   useEffect(() => {
@@ -116,10 +413,10 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       currentItemRef.current = {
         id: playerInfo.item_id,
         mediaSourceId: playerInfo.media_source_id,
-        time: currentTime,
+        time: currentTime > 0 ? currentTime : (!resumeDecisionMadeRef.current && (playerInfo.resume_seconds ?? 0) > 15 ? playerInfo.resume_seconds! : 0),
       }
     }
-  }, [playerInfo?.item_id, playerInfo?.media_source_id, currentTime])
+  }, [playerInfo?.item_id, playerInfo?.media_source_id, playerInfo?.resume_seconds, currentTime])
 
   // Initialize Audio & Subtitle Defaults
   useEffect(() => {
@@ -129,6 +426,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }
   }, [playerInfo?.audio_tracks, selectedAudioIndex])
 
+  // Unique playSessionId for Jellyfin transcoding worker coordination
+  const playSessionIdRef = useRef<string>(
+    Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
+  )
+  const prevAudioIndexRef = useRef<number | null>(selectedAudioIndex)
+  useEffect(() => {
+    if (prevAudioIndexRef.current !== null && prevAudioIndexRef.current !== selectedAudioIndex) {
+      playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
+    }
+    prevAudioIndexRef.current = selectedAudioIndex
+  }, [selectedAudioIndex])
+
   // Reset controls hide timer on activity
   const handleUserActivity = useCallback(() => {
     setShowControls(true)
@@ -136,43 +445,125 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       clearTimeout(controlsTimeoutRef.current)
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (!showAudioMenu && !showSubtitleMenu && !showSpeedMenu && !showEpisodesDrawer && isPlaying) {
+      if (!showAudioMenu && !showSubtitleMenu && !showSpeedMenu && !showQualityMenu && !showEpisodesDrawer && isPlaying) {
         setShowControls(false)
       }
     }, 3200)
-  }, [showAudioMenu, showSubtitleMenu, showSpeedMenu, showEpisodesDrawer, isPlaying])
+  }, [showAudioMenu, showSubtitleMenu, showSpeedMenu, showQualityMenu, showEpisodesDrawer, isPlaying])
 
-  // HLS stream construction with selected audio track
-  const getStreamUrl = useCallback(() => {
-    if (!playerInfo?.stream_url) return ''
-    let url = playerInfo.stream_url
-    if (selectedAudioIndex !== null) {
-      url += `&AudioStreamIndex=${selectedAudioIndex}`
-    }
-    return url
-  }, [playerInfo?.stream_url, selectedAudioIndex])
+  // HLS stream construction helper with selected audio track, quality preset & session binding
+  const buildStreamUrl = useCallback(
+    (info: PlayerInfoResponse, audioIdx: number | null, sessionId: string, quality: QualityPreset | null) => {
+      if (!info.stream_url) return ''
+      let url = info.stream_url
+
+      // Strip existing parameters to apply user choice cleanly
+      url = url.replace(/&?EnableAutoStreamCopy=[^&]*/g, '')
+      url = url.replace(/&?VideoBitRate=[^&]*/g, '')
+      url = url.replace(/&?AudioBitRate=[^&]*/g, '')
+      url = url.replace(/&?MaxWidth=[^&]*/g, '')
+      url = url.replace(/&?MaxHeight=[^&]*/g, '')
+
+      if (quality) {
+        if (quality.isOriginal) {
+          // Direct Stream copy for native formats (H.264/AAC), high-bitrate transcode otherwise
+          url += `&EnableAutoStreamCopy=true`
+          if (quality.videoBitrate) {
+            url += `&VideoBitRate=${quality.videoBitrate}`
+          }
+          if (quality.audioBitrate) {
+            url += `&AudioBitRate=${quality.audioBitrate}`
+          }
+        } else {
+          // Explicit bitrate preset / resolution ladder downscale
+          url += `&EnableAutoStreamCopy=false`
+          if (quality.videoBitrate) {
+            url += `&VideoBitRate=${quality.videoBitrate}`
+          }
+          if (quality.audioBitrate) {
+            url += `&AudioBitRate=${quality.audioBitrate}`
+          }
+          if (quality.width) {
+            url += `&MaxWidth=${quality.width}`
+          }
+          if (quality.height) {
+            url += `&MaxHeight=${quality.height}`
+          }
+        }
+      } else {
+        url += `&EnableAutoStreamCopy=true&VideoBitRate=35000000&AudioBitRate=384000`
+      }
+
+      if (!url.includes('VideoCodec=')) {
+        url += '&VideoCodec=h264'
+      }
+      if (!url.includes('AudioCodec=')) {
+        url += '&AudioCodec=aac'
+      }
+      if (!url.includes('TranscodingMaxAudioChannels=')) {
+        url += '&TranscodingMaxAudioChannels=2'
+      }
+      if (!url.includes('SegmentContainer=')) {
+        url += '&SegmentContainer=mp4'
+      }
+      if (!url.includes('MinSegments=')) {
+        url += '&MinSegments=2'
+      }
+      if (!url.includes('BreakOnNonKeyFrames=')) {
+        url += '&BreakOnNonKeyFrames=True'
+      }
+      if (!url.includes('PlaySessionId=')) {
+        url += `&PlaySessionId=${sessionId}`
+      }
+      if (audioIdx !== null && !url.includes('AudioStreamIndex=')) {
+        url += `&AudioStreamIndex=${audioIdx}`
+      }
+      return url
+    },
+    []
+  )
 
   // Load and Attach HLS Stream
   useEffect(() => {
     const video = videoRef.current
     if (!video || !playerInfo?.item_id || !playerInfo.success) return
 
-    const streamUrl = getStreamUrl()
+    const isNewEpisode = prevItemIdRef.current !== playerInfo.item_id
+    if (isNewEpisode) {
+      playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
+      prevItemIdRef.current = playerInfo.item_id
+    }
+
+    const streamUrl = buildStreamUrl(playerInfo, selectedAudioIndex, playSessionIdRef.current, activeQuality)
     if (!streamUrl) return
 
     setIsBuffering(true)
 
-    // Save previous time if switching tracks
-    const targetSeekTime = hasResumed
-      ? video.currentTime
-      : playerInfo.resume_seconds && playerInfo.resume_seconds > 10 && !playerInfo.is_played
-      ? playerInfo.resume_seconds
-      : 0
+    const hasResume = !!(
+      isNewEpisode &&
+      playerInfo.resume_seconds &&
+      playerInfo.resume_seconds > 15 &&
+      !playerInfo.is_played &&
+      playerInfo.resume_seconds < ((playerInfo.duration_seconds || 999999) - 30)
+    )
+
+    if (hasResume && !resumeDecisionMadeRef.current) {
+      setShowResumePrompt(true)
+    }
+
+    // Determine seek time: if it's a newly switched episode and resume decision hasn't been made,
+    // wait for user choice. If decision already made or no resume point, start as normal.
+    const targetSeekTime = isNewEpisode
+      ? (resumeDecisionMadeRef.current && playerInfo.resume_seconds && !playerInfo.is_played ? playerInfo.resume_seconds : 0)
+      : (video.currentTime || 0)
 
     if (Hls.isSupported()) {
       if (hlsRef.current) {
         hlsRef.current.destroy()
+        hlsRef.current = null
       }
+
+      video.pause()
 
       const hls = new Hls({
         enableWorker: true,
@@ -187,16 +578,19 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsBuffering(false)
-        if (targetSeekTime > 0) {
-          video.currentTime = targetSeekTime
-          if (!hasResumed && playerInfo.resume_seconds > 10) {
-            setResumeToast({ show: true, time: playerInfo.resume_seconds })
-            setHasResumed(true)
-          }
-        }
-        video.play().catch(() => {
+        if (hasResume && !resumeDecisionMadeRef.current) {
+          video.pause()
           setIsPlaying(false)
-        })
+        } else {
+          if (targetSeekTime > 0) {
+            video.currentTime = targetSeekTime
+          }
+          video.play().then(() => {
+            setIsPlaying(true)
+          }).catch(() => {
+            setIsPlaying(false)
+          })
+        }
       })
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -216,19 +610,24 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native Safari / iOS
+      video.pause()
       video.src = streamUrl
+      video.load()
       const handleLoadedMetadata = () => {
         setIsBuffering(false)
-        if (targetSeekTime > 0) {
-          video.currentTime = targetSeekTime
-          if (!hasResumed && playerInfo.resume_seconds > 10) {
-            setResumeToast({ show: true, time: playerInfo.resume_seconds })
-            setHasResumed(true)
-          }
-        }
-        video.play().catch(() => {
+        if (hasResume && !resumeDecisionMadeRef.current) {
+          video.pause()
           setIsPlaying(false)
-        })
+        } else {
+          if (targetSeekTime > 0) {
+            video.currentTime = targetSeekTime
+          }
+          video.play().then(() => {
+            setIsPlaying(true)
+          }).catch(() => {
+            setIsPlaying(false)
+          })
+        }
       }
       video.addEventListener('loadedmetadata', handleLoadedMetadata)
       return () => {
@@ -236,13 +635,15 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       }
     }
 
-    // Report playback start
-    reportStart({
-      item_id: playerInfo.item_id,
-      media_source_id: playerInfo.media_source_id,
-      audio_stream_index: selectedAudioIndex ?? undefined,
-      position_seconds: targetSeekTime,
-    })
+    // Report playback start if not waiting for resume prompt
+    if (!hasResume || resumeDecisionMadeRef.current) {
+      reportStart({
+        item_id: playerInfo.item_id,
+        media_source_id: playerInfo.media_source_id,
+        audio_stream_index: selectedAudioIndex ?? undefined,
+        position_seconds: targetSeekTime,
+      })
+    }
 
     return () => {
       if (hlsRef.current) {
@@ -250,7 +651,49 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         hlsRef.current = null
       }
     }
-  }, [playerInfo?.item_id, getStreamUrl, reportStart])
+  }, [playerInfo?.item_id, selectedAudioIndex, activeQuality, buildStreamUrl, reportStart])
+
+  const handleConfirmResume = () => {
+    resumeDecisionMadeRef.current = true
+    setShowResumePrompt(false)
+    const video = videoRef.current
+    if (!video) return
+    const target = playerInfo?.resume_seconds || 0
+    if (target > 0) {
+      video.currentTime = target
+    }
+    video.play().then(() => {
+      setIsPlaying(true)
+    }).catch(() => {
+      setIsPlaying(false)
+    })
+    reportStart({
+      item_id: playerInfo?.item_id || '',
+      media_source_id: playerInfo?.media_source_id,
+      audio_stream_index: selectedAudioIndex ?? undefined,
+      position_seconds: target,
+    })
+  }
+
+  const handleStartFromBeginning = () => {
+    resumeDecisionMadeRef.current = true
+    setShowResumePrompt(false)
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = 0
+    video.play().then(() => {
+      setIsPlaying(true)
+    }).catch(() => {
+      setIsPlaying(false)
+    })
+    reportProgress({
+      item_id: playerInfo?.item_id || '',
+      media_source_id: playerInfo?.media_source_id,
+      position_seconds: 0,
+      is_paused: false,
+      event: 'seek',
+    })
+  }
 
   // Stop reporting on unmount or page unload
   useEffect(() => {
@@ -261,6 +704,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           item_id: cur.id,
           media_source_id: cur.mediaSourceId,
           position_seconds: cur.time,
+          close_player: true,
         })
       }
     }
@@ -275,6 +719,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           item_id: cur.id,
           media_source_id: cur.mediaSourceId,
           position_seconds: cur.time,
+          close_player: true,
         })
       }
     }
@@ -455,35 +900,54 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     setShowSpeedMenu(false)
   }
 
-  const handlePlayNextEpisode = () => {
-    if (playerInfo?.next_episode) {
-      // Save current stop
-      if (playerInfo.item_id) {
-        reportStop({
-          item_id: playerInfo.item_id,
-          media_source_id: playerInfo.media_source_id,
-          position_seconds: currentTime,
-        })
-      }
-      setNextEpisodePrompt(false)
-      setHasResumed(false)
-      setCurrentSeason(playerInfo.next_episode.season_number)
-      setCurrentEpisode(playerInfo.next_episode.episode_number)
-    }
-  }
-
   const handleSelectEpisode = (ep: EpisodeInfo) => {
-    if (playerInfo?.item_id) {
+    if (ep.id === playerInfo?.item_id) {
+      setShowEpisodesDrawer(false)
+      return
+    }
+    const cur = currentItemRef.current
+    if (cur.id) {
       reportStop({
-        item_id: playerInfo.item_id,
-        media_source_id: playerInfo.media_source_id,
-        position_seconds: currentTime,
+        item_id: cur.id,
+        media_source_id: cur.mediaSourceId,
+        position_seconds: cur.time,
+        close_player: false,
       })
     }
-    setHasResumed(false)
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.removeAttribute('src')
+      videoRef.current.load()
+    }
     setShowEpisodesDrawer(false)
+    setShowStallPrompt(false)
+    setShowResumePrompt(false)
+    resumeDecisionMadeRef.current = false
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current)
+      stallTimerRef.current = null
+    }
+    setIsBuffering(true)
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+    setBufferedEnd(0)
+    setSelectedAudioIndex(null)
+    setSelectedSubtitleIndex(null)
+    playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
     setCurrentSeason(ep.season_number)
     setCurrentEpisode(ep.episode_number)
+  }
+
+  const handlePlayNextEpisode = () => {
+    if (playerInfo?.next_episode) {
+      setNextEpisodePrompt(false)
+      handleSelectEpisode(playerInfo.next_episode)
+    }
   }
 
   // Keyboard Navigation
@@ -528,23 +992,24 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         case 'Escape':
           e.preventDefault()
           if (showEpisodesDrawer) setShowEpisodesDrawer(false)
+          else if (showQualityMenu) setShowQualityMenu(false)
           else if (showAudioMenu) setShowAudioMenu(false)
           else if (showSubtitleMenu) setShowSubtitleMenu(false)
           else if (showSpeedMenu) setShowSpeedMenu(false)
-          else onClose()
+          else handleClosePlayer()
           break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlay, handleSkip, handleVolumeChange, toggleFullscreen, toggleMute, volume, showEpisodesDrawer, showAudioMenu, showSubtitleMenu, showSpeedMenu, onClose, handleUserActivity])
+  }, [togglePlay, handleSkip, handleVolumeChange, toggleFullscreen, toggleMute, volume, showEpisodesDrawer, showQualityMenu, showAudioMenu, showSubtitleMenu, showSpeedMenu, handleClosePlayer, handleUserActivity])
 
   // Progress Bar Scrubber Calculation
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
   const bufferPercent = duration > 0 ? (bufferedEnd / duration) * 100 : 0
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       onMouseMove={handleUserActivity}
@@ -554,6 +1019,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     >
       {/* Video Element */}
       <video
+        key={`video-${tconst}-${currentSeason ?? 0}-${currentEpisode ?? 0}`}
         ref={videoRef}
         playsInline
         onPlay={() => setIsPlaying(true)}
@@ -561,6 +1027,22 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         onWaiting={() => setIsBuffering(true)}
         onPlaying={() => setIsBuffering(false)}
         onTimeUpdate={handleTimeUpdate}
+        onEnded={() => {
+          setIsPlaying(false)
+          const cur = currentItemRef.current
+          if (cur.id) {
+            reportStop({
+              item_id: cur.id,
+              media_source_id: cur.mediaSourceId,
+              position_seconds: duration,
+              close_player: false,
+              is_played: true,
+            })
+          }
+          if (playerInfo?.has_next_episode && playerInfo.next_episode) {
+            setNextEpisodePrompt(true)
+          }
+        }}
         onClick={togglePlay}
         className="w-full h-full object-contain cursor-pointer"
       >
@@ -606,9 +1088,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         </div>
       )}
 
+      {/* Syncing / Scanning State */}
+      {isSyncingWithJellyfin && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-20 text-center px-4">
+          <Loader2 className="h-12 w-12 text-emerald-400 animate-spin" />
+          <p className="mt-4 text-base text-zinc-200 font-medium">Монтирование в Jellyfin...</p>
+          <p className="mt-1 text-xs text-zinc-400">Jellyfin регистрирует видеопоток (попытка {syncRetryCount + 1}/8)</p>
+        </div>
+      )}
+
       {/* Error State */}
-      {(error || (playerInfo && !playerInfo.success)) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/95 p-6 z-20 text-center">
+      {isErrorState && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/95 p-6 z-50 text-center pointer-events-auto">
           <div className="p-3 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400 mb-3">
             <X className="h-8 w-8" />
           </div>
@@ -616,36 +1107,93 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           <p className="text-sm text-zinc-400 max-w-md mb-6">
             {playerInfo?.error || 'Ошибка связи с сервером Jellyfin. Проверьте монтирование тайтла.'}
           </p>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-semibold transition"
-          >
-            Вернуться назад
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3 relative z-50 pointer-events-auto">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setSyncRetryCount(0)
+                refetch()
+              }}
+              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-lg"
+            >
+              <RotateCw className="w-4 h-4" />
+              Повторить
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowAlternateModal(true)
+              }}
+              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white text-sm font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-lg"
+            >
+              <Zap className="w-4 h-4 fill-current" />
+              Выбрать по сидам
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClosePlayer()
+              }}
+              className="px-5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-white text-sm font-semibold transition cursor-pointer shadow-lg"
+            >
+              Вернуться назад
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Floating Resume Notification Toast */}
-      {resumeToast?.show && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl bg-zinc-900/90 border border-emerald-500/40 backdrop-blur-md shadow-2xl flex items-center gap-3 animate-fade-in">
-          <span className="text-xs text-zinc-200">
-            Возобновлено с <span className="font-mono text-emerald-400 font-bold">{formatTime(resumeToast.time)}</span>
-          </span>
-          <button
-            onClick={() => {
-              handleSeek(0)
-              setResumeToast(null)
-            }}
-            className="text-xs font-semibold text-emerald-300 hover:text-emerald-200 underline decoration-dotted"
-          >
-            С начала
-          </button>
-          <button
-            onClick={() => setResumeToast(null)}
-            className="text-zinc-400 hover:text-white ml-1"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+      {/* Resume Playback Interactive Prompt Modal */}
+      {showResumePrompt && playerInfo && (
+        <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 pointer-events-auto animate-fade-in">
+          <div className="bg-zinc-950 border border-emerald-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl text-center flex flex-col items-center gap-4">
+            <div className="p-3.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <RotateCcw className="h-8 w-8" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white">
+                Продолжить просмотр?
+              </h3>
+              <p className="text-xs text-zinc-400">
+                {playerInfo.ru_title || ruTitle || title}
+                {playerInfo.media_type === 'Episode' && playerInfo.title && (
+                  <span className="block text-emerald-400 font-medium mt-0.5">
+                    {playerInfo.title}
+                  </span>
+                )}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-zinc-900/80 border border-white/5 w-full flex items-center justify-between text-xs">
+              <span className="text-zinc-400">Остановлено на:</span>
+              <span className="font-mono text-emerald-400 font-bold text-sm">
+                {formatTime(playerInfo.resume_seconds)}
+                <span className="text-zinc-500 text-xs font-normal ml-1">
+                  / {formatTime(playerInfo.duration_seconds || duration)}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full mt-1">
+              <button
+                autoFocus
+                onClick={handleConfirmResume}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                <Play className="h-4 w-4 fill-current" />
+                <span>Продолжить с {formatTime(playerInfo.resume_seconds)}</span>
+              </button>
+              <button
+                onClick={handleStartFromBeginning}
+                className="w-full sm:w-auto px-4 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-semibold text-sm transition border border-white/10 active:scale-95 shrink-0"
+              >
+                С начала
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -663,7 +1211,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
               {playerInfo.next_episode.name}
             </div>
             <div className="text-[11px] text-zinc-400 font-mono">
-              Сезон {playerInfo.next_episode.season_number}, Эпизод {playerInfo.next_episode.episode_number}
+              Сезон {playerInfo.next_episode.season_number}, серия {playerInfo.next_episode.episode_number}
             </div>
           </div>
           <button
@@ -675,17 +1223,26 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         </div>
       )}
 
+      {/* Quality Toast Notification */}
+      {qualityToast && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-zinc-900/90 border border-emerald-500/40 text-emerald-300 text-xs font-semibold backdrop-blur-md shadow-2xl pointer-events-none flex items-center gap-2 animate-fade-in">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-emerald-400" />
+          <span>{qualityToast}</span>
+        </div>
+      )}
+
       {/* Cinema Controls Overlay */}
-      <div
-        className={`absolute inset-0 flex flex-col justify-between p-4 md:p-6 bg-gradient-to-t from-black/85 via-transparent to-black/70 transition-opacity duration-300 pointer-events-none ${
-          showControls ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
+      {!isErrorState && (
+        <div
+          className={`absolute inset-0 flex flex-col justify-between p-4 md:p-6 bg-gradient-to-t from-black/85 via-transparent to-black/70 transition-opacity duration-300 pointer-events-none ${
+            showControls ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
         {/* Top Header Bar */}
         <div className="flex items-center justify-between gap-4 pointer-events-auto z-20">
           <div className="min-w-0">
             <h2 className="text-base md:text-lg font-extrabold text-white truncate drop-shadow-md">
-              {ruTitle || title}
+              {playerInfo?.ru_title || ruTitle || title}
             </h2>
             {playerInfo?.media_type === 'Episode' && playerInfo.title && (
               <p className="text-xs md:text-sm text-emerald-400 font-semibold truncate drop-shadow-sm">
@@ -696,7 +1253,16 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
 
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={onClose}
+              onClick={() => setShowAlternateModal(true)}
+              className="p-2 md:px-3.5 py-2 rounded-full bg-zinc-900/70 hover:bg-zinc-800 text-amber-400 hover:text-amber-300 transition border border-white/10 backdrop-blur-md flex items-center gap-1.5"
+              title="Сменить раздачу (выбрать по сидам)"
+            >
+              <Zap className="h-4 w-4 fill-current" />
+              <span className="text-xs font-semibold hidden sm:inline">Сменить раздачу</span>
+            </button>
+
+            <button
+              onClick={handleClosePlayer}
               className="p-2.5 rounded-full bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 hover:text-white transition border border-white/10 backdrop-blur-md"
               title="Закрыть плеер (Esc)"
             >
@@ -816,7 +1382,13 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
               {/* Episodes Drawer Toggle (For TV Series) */}
               {playerInfo?.episodes && playerInfo.episodes.length > 1 && (
                 <button
-                  onClick={() => setShowEpisodesDrawer(!showEpisodesDrawer)}
+                  onClick={() => {
+                    setShowEpisodesDrawer(!showEpisodesDrawer)
+                    setShowAudioMenu(false)
+                    setShowSubtitleMenu(false)
+                    setShowSpeedMenu(false)
+                    setShowQualityMenu(false)
+                  }}
                   className={`p-2 rounded-xl transition flex items-center gap-1 text-xs font-bold ${
                     showEpisodesDrawer ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
                   }`}
@@ -835,6 +1407,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                       setShowAudioMenu(!showAudioMenu)
                       setShowSubtitleMenu(false)
                       setShowSpeedMenu(false)
+                      setShowQualityMenu(false)
+                      setShowEpisodesDrawer(false)
                     }}
                     className={`p-2 rounded-xl transition flex items-center gap-1 text-xs font-bold ${
                       showAudioMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
@@ -882,6 +1456,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                       setShowSubtitleMenu(!showSubtitleMenu)
                       setShowAudioMenu(false)
                       setShowSpeedMenu(false)
+                      setShowQualityMenu(false)
+                      setShowEpisodesDrawer(false)
                     }}
                     className={`p-2 rounded-xl transition flex items-center gap-1 text-xs font-bold ${
                       showSubtitleMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
@@ -935,6 +1511,76 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                 </div>
               )}
 
+              {/* Quality Dropdown */}
+              {qualityOptions.length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowQualityMenu(!showQualityMenu)
+                      setShowAudioMenu(false)
+                      setShowSubtitleMenu(false)
+                      setShowSpeedMenu(false)
+                      setShowEpisodesDrawer(false)
+                    }}
+                    className={`p-2 rounded-xl transition flex items-center gap-1.5 text-xs font-bold ${
+                      showQualityMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
+                    }`}
+                    title="Качество видео"
+                  >
+                    <SlidersHorizontal className="h-4 w-4 md:h-5 md:w-5" />
+                    <span className="text-[11px] md:text-xs">
+                      {activeQuality ? activeQuality.shortLabel : 'Качество'}
+                    </span>
+                  </button>
+
+                  {showQualityMenu && (
+                    <div className="absolute bottom-12 right-0 w-64 md:w-72 p-2 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-2xl backdrop-blur-xl z-50 animate-fade-in">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
+                        <span>Качество видео</span>
+                        {playerInfo?.video_codec && (
+                          <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800/80 px-1.5 py-0.5 rounded uppercase">
+                            {playerInfo.video_codec}
+                          </span>
+                        )}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto mt-1 space-y-1">
+                        {qualityOptions.map((preset) => {
+                          const isSelected = activeQuality?.id === preset.id
+                          return (
+                            <button
+                              key={preset.id}
+                              onClick={() => handleQualityChange(preset)}
+                              className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 text-emerald-400 font-bold'
+                                  : 'hover:bg-white/10 text-zinc-300'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold">{preset.label}</span>
+                                  {preset.isOriginal && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-medium">
+                                      Direct
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-zinc-400 mt-0.5 truncate">
+                                  {preset.description}
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Playback Speed Dropdown */}
               <div className="relative">
                 <button
@@ -942,6 +1588,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                     setShowSpeedMenu(!showSpeedMenu)
                     setShowAudioMenu(false)
                     setShowSubtitleMenu(false)
+                    setShowQualityMenu(false)
+                    setShowEpisodesDrawer(false)
                   }}
                   className={`p-2 rounded-xl transition flex items-center gap-1 text-xs font-bold ${
                     showSpeedMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
@@ -1002,6 +1650,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Series Episodes Drawer (Slide-out panel) */}
       {showEpisodesDrawer && playerInfo?.episodes && (
@@ -1034,7 +1683,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] font-mono text-zinc-400">
-                      S{ep.season_number.toString().padStart(2, '0')}E{ep.episode_number.toString().padStart(2, '0')}
+                      Сезон {ep.season_number} · Серия {ep.episode_number}
                     </div>
                     <div className="text-xs font-bold text-white truncate mt-0.5">
                       {ep.name}
@@ -1062,6 +1711,193 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           </div>
         </div>
       )}
-    </div>
+
+      {/* 30-Second Buffering Stall Notification Prompt */}
+      {showStallPrompt && !showAlternateModal && (
+        <div className="absolute top-16 md:top-20 left-1/2 -translate-x-1/2 z-50 p-4 rounded-2xl bg-zinc-950/95 border border-amber-500/50 backdrop-blur-xl shadow-2xl max-w-md w-[92%] flex flex-col gap-3 animate-fade-in pointer-events-auto">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+              <Zap className="h-5 w-5 fill-current" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                Долгая буферизация (&gt;30 сек)
+              </div>
+              <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                Похоже, текущая раздача медленно отдает данные. Хотите переключиться на раздачу с максимальным количеством сидов?
+              </p>
+            </div>
+            <button
+              onClick={() => setShowStallPrompt(false)}
+              className="text-zinc-500 hover:text-zinc-300 p-1 rounded-lg transition"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-white/5">
+            <button
+              onClick={() => {
+                setShowStallPrompt(false)
+                if (stallTimerRef.current) clearTimeout(stallTimerRef.current)
+                stallTimerRef.current = setTimeout(() => {
+                  setShowStallPrompt(true)
+                }, 30000)
+              }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition"
+            >
+              Подождать
+            </button>
+            {activeQuality && (activeQuality.isOriginal || (activeQuality.videoBitrate && activeQuality.videoBitrate > 3500000)) && (
+              <button
+                onClick={() => {
+                  setShowStallPrompt(false)
+                  const webPreset = qualityOptions.find((q) => q.id === '1080p_std') || qualityOptions.find((q) => q.id === '720p')
+                  if (webPreset) {
+                    handleQualityChange(webPreset)
+                  }
+                }}
+                className="px-3 py-1.5 rounded-xl bg-cyan-600/90 hover:bg-cyan-500 text-white text-xs font-semibold transition flex items-center gap-1 active:scale-95 shadow-md"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Снизить битрейт (3.5 Мбит/с)
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setShowStallPrompt(false)
+                setShowAlternateModal(true)
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition flex items-center gap-1.5 shadow-md active:scale-95"
+            >
+              <Zap className="h-3.5 w-3.5 fill-current" />
+              Выбрать по сидам ({sortedTorrentsBySeeds.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Alternate Torrent Selector Modal (Sorted by Seeds) */}
+      {showAlternateModal && (
+        <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 md:p-6 pointer-events-auto animate-fade-in">
+          <div className="bg-zinc-950 border border-white/10 rounded-2xl md:rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 md:p-5 border-b border-white/10 flex items-center justify-between gap-3 bg-zinc-900/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                  <Zap className="h-5 w-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Выбор раздачи по сидам</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono">
+                      {sortedTorrentsBySeeds.length}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {currentSeason !== undefined ? `Сезон ${currentSeason} · ` : ''}Сортировка строго по количеству активных сидов
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAlternateModal(false)}
+                className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2.5">
+              {isLoadingTorrents ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Loader2 className="h-8 w-8 text-amber-400 animate-spin mb-3" />
+                  <span className="text-sm text-zinc-400">Поиск доступных раздач...</span>
+                </div>
+              ) : sortedTorrentsBySeeds.length === 0 ? (
+                <div className="text-center py-16 text-zinc-400 text-sm">
+                  Раздачи не найдены
+                </div>
+              ) : (
+                sortedTorrentsBySeeds.map((torrent) => {
+                  const audioTag = extractAudioLabel(torrent.title || '')
+                  const res = classifyResolution(torrent).toUpperCase()
+                  const isDead = (torrent.seeds || 0) === 0
+                  return (
+                    <div
+                      key={torrent.id || torrent.magnet}
+                      className="p-3.5 rounded-2xl bg-zinc-900/70 border border-white/5 hover:border-amber-500/30 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                              res === '4K'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : res === '1080P'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-zinc-800 text-zinc-300'
+                            }`}
+                          >
+                            {res}
+                          </span>
+                          <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                            🌱 {torrent.seeds || 0} сидов
+                          </span>
+                          {torrent.leeches !== undefined && torrent.leeches > 0 && (
+                            <span className="text-[11px] text-zinc-400 font-mono">
+                              📥 {torrent.leeches}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-zinc-400 font-mono">
+                            {formatBytes(torrent.size || 0)}
+                          </span>
+                          {torrent.tracker && (
+                            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
+                              {torrent.tracker}
+                            </span>
+                          )}
+                          {audioTag && (
+                            <span className="text-[10px] text-cyan-400/90 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                              {audioTag}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className="text-xs text-zinc-200 line-clamp-2 leading-relaxed"
+                          title={torrent.title}
+                        >
+                          {torrent.title}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center justify-end sm:justify-center">
+                        <button
+                          disabled={isMountingAlternate || isDead}
+                          onClick={() => handleSelectAlternateTorrent(torrent)}
+                          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-md"
+                        >
+                          {isMountingAlternate ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <span>Монтирование...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-3.5 w-3.5 fill-current" />
+                              <span>Смотреть</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body
   )
 }
