@@ -510,20 +510,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       if (!info.stream_url) return ''
       let url = info.stream_url
 
-      // TorrServer GStreamer HLS stream (/torr/gst/...)
-      if (url.includes('/torr/gst/') || url.includes('/gst/')) {
-        if (audioIdx !== null) {
-          if (url.includes('audio=')) {
-            url = url.replace(/audio=\d+/, `audio=${audioIdx}`)
-          } else {
-            url += (url.includes('?') ? '&' : '?') + `audio=${audioIdx}`
-          }
-        }
-        return url
-      }
-
-      // Direct stream / non-HLS stream
-      if (url.includes('/torr/') || !url.includes('.m3u8')) {
+      // TorrServer direct HTTP stream (/torr/stream/...)
+      if (url.includes('/torr/stream') || url.includes('/stream') || !url.includes('.m3u8')) {
         return url
       }
 
@@ -655,9 +643,16 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           })
         }
       }
+      const handleCanPlay = () => {
+        setIsBuffering(false)
+      }
       video.addEventListener('loadedmetadata', handleLoadedMetadata)
+      video.addEventListener('canplay', handleCanPlay)
+      video.addEventListener('loadeddata', handleCanPlay)
       return () => {
         video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+        video.removeEventListener('canplay', handleCanPlay)
+        video.removeEventListener('loadeddata', handleCanPlay)
       }
     } else if (Hls.isSupported()) {
       if (hlsRef.current) {
@@ -1135,6 +1130,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         onPause={() => setIsPlaying(false)}
         onWaiting={() => setIsBuffering(true)}
         onPlaying={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
+        onLoadedData={() => setIsBuffering(false)}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
           setIsPlaying(false)
