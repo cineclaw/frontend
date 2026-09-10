@@ -13,6 +13,7 @@ import {
   Tv,
   Monitor,
   Plus,
+  Play,
   Loader2,
 } from "lucide-react"
 import {
@@ -31,6 +32,7 @@ interface TorrentListProps {
   imdbId: string
   year?: number | null
   isSeries?: boolean
+  onPlayMedia?: () => void
 }
 
 function extractRuTitle(torrentTitle: string): string | undefined {
@@ -44,7 +46,7 @@ function extractRuTitle(torrentTitle: string): string | undefined {
   return undefined
 }
 
-export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps) {
+export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: TorrentListProps) {
   const [selectedTracker, setSelectedTracker] = useState<string>("all")
   const [selectedResolution, setSelectedResolution] = useState<string>("all")
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
@@ -90,20 +92,33 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
     setTimeout(() => setCopiedMagnet(null), 2000)
   }
 
+  // Mounter API mutation & status
   const [mountTorrent] = useMountTorrentMutation()
-  const [mountingTorrentId, setMountingTorrentId] = useState<string | null>(null)
-  const [mountedTorrentIds, setMountedTorrentIds] = useState<Set<string>>(new Set())
+  const { data: mountStatus } = useGetMountedStatusQuery(imdbId, {
+    skip: !imdbId,
+    pollingInterval: 5000,
+  })
+
+  // Conflict dialog state
+  const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false)
+  const [conflictTorrent, setConflictTorrent] = useState<any>(null)
+  const [conflictTargetSeason, setConflictTargetSeason] = useState<number | null>(null)
   const [mountErrors, setMountErrors] = useState<Record<string, string>>({})
 
-  const { data: mountStatus } = useGetMountedStatusQuery(imdbId)
-  const [conflictTorrent, setConflictTorrent] = useState<any | null>(null)
-  const [conflictTargetSeason, setConflictTargetSeason] = useState<number | null>(null)
-  const [isConflictDialogOpen, setIsConflictDialogOpen] = useState<boolean>(false)
+  // Active mounting torrent tracker
+  const [mountingTorrentId, setMountingTorrentId] = useState<string | null>(null)
+
+  const mountedTorrentIds = new Set(
+    (mountStatus?.mounted_files || []).map((f) => {
+      // file path often has hash or name
+      return f
+    })
+  )
 
   const executeMount = async (
     torrent: any,
-    targetSeason: number | null,
-    mode: "add" | "replace" | "add_version",
+    season: number | null,
+    mode: 'add' | 'replace' | 'add_version',
     versionName?: string
   ) => {
     const tId = torrent.info_hash || torrent.id
@@ -113,30 +128,29 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
       delete next[tId]
       return next
     })
-
     try {
-      await mountTorrent({
+      const res = await mountTorrent({
         tconst: imdbId,
         title: query,
-        ru_title: torrent.ru_title || extractRuTitle(torrent.title),
+        ru_title: extractRuTitle(torrent.title),
         year: year ? year.toString() : undefined,
         type: isSeries ? "tvSeries" : "movie",
-        season: targetSeason ?? undefined,
-        magnet: torrent.magnet || undefined,
-        tracker: torrent.tracker,
+        season: season ?? undefined,
+        magnet: torrent.magnet,
+        tracker: torrent.tracker || (torrent.trackers && torrent.trackers[0]),
         torrent_id: torrent.id,
         details_url: torrent.details_url,
-        mode,
+        mode: mode,
         version_name: versionName,
         resolution: torrent.resolution,
         folder_name: mountStatus?.folder_name,
       }).unwrap()
 
-      setMountedTorrentIds((prev) => new Set(prev).add(tId))
-      window.open(`http://${window.location.hostname}:8096`, "_blank")
-      setIsConflictDialogOpen(false)
+      if (res && res.success) {
+        setIsConflictDialogOpen(false)
+      }
     } catch (err: any) {
-      console.error("Failed to mount torrent for streaming:", err)
+      console.error("Mount failed:", err)
       const errMsg =
         err?.data?.error || err?.error || err?.message || "Ошибка монтирования в Jellyfin"
       setMountErrors((prev) => ({ ...prev, [tId]: errMsg }))
@@ -152,7 +166,11 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
 
     const tId = torrent.info_hash || torrent.id
     if (mountedTorrentIds.has(tId)) {
-      window.open(`http://${window.location.hostname}:8096`, "_blank")
+      if (onPlayMedia) {
+        onPlayMedia()
+      } else {
+        window.open(`http://${window.location.hostname}:8096`, "_blank")
+      }
       return
     }
 
@@ -783,7 +801,7 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
                           mountErrors[torrent.info_hash || torrent.id]
                             ? `Ошибка: ${mountErrors[torrent.info_hash || torrent.id]}. Нажмите, чтобы повторить.`
                             : mountedTorrentIds.has(torrent.info_hash || torrent.id)
-                            ? "Открыть в Jellyfin"
+                            ? "Смотреть онлайн"
                             : "Добавить в библиотеку Jellyfin"
                         }
                       >
@@ -799,8 +817,8 @@ export function TorrentList({ query, imdbId, year, isSeries }: TorrentListProps)
                           </>
                         ) : mountedTorrentIds.has(torrent.info_hash || torrent.id) ? (
                           <>
-                            <Check className="h-3.5 w-3.5 text-emerald-400" />
-                            <span>В Jellyfin</span>
+                            <Play className="h-3.5 w-3.5 fill-current text-emerald-400" />
+                            <span>Смотреть</span>
                           </>
                         ) : (
                           <>

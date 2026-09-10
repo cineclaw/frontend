@@ -51,6 +51,12 @@ export default defineConfig({
         target: 'http://127.0.0.1:9118',
         changeOrigin: true,
       },
+      '/jellyfin': {
+        target: process.env.JELLYFIN_DEV_TARGET || 'http://127.0.0.1:8096',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/jellyfin/, ''),
+        ws: true,
+      },
     },
   },
 })

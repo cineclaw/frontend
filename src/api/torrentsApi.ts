@@ -145,7 +145,40 @@ export const torrentsApi = createApi({
       },
       keepUnusedDataFor: 600,
     }),
-
+    getPlayerInfo: builder.query<PlayerInfoResponse, { tconst: string; season?: number; episode?: number }>({
+      query: (params) => {
+        const queryParams: Record<string, string> = { tconst: params.tconst }
+        if (params.season) queryParams.season = params.season.toString()
+        if (params.episode) queryParams.episode = params.episode.toString()
+        return {
+          url: 'api/stream/player/info',
+          params: queryParams,
+        }
+      },
+      providesTags: (_result, _error, arg) => [{ type: 'MountStatus', id: `player-${arg.tconst}` }],
+    }),
+    reportPlayerStart: builder.mutation<PlaybackActionResponse, PlaybackStartRequest>({
+      query: (body) => ({
+        url: 'api/stream/player/start',
+        method: 'POST',
+        body,
+      }),
+    }),
+    reportPlayerProgress: builder.mutation<PlaybackActionResponse, PlaybackProgressRequest>({
+      query: (body) => ({
+        url: 'api/stream/player/progress',
+        method: 'POST',
+        body,
+      }),
+    }),
+    reportPlayerStop: builder.mutation<PlaybackActionResponse, PlaybackStopRequest>({
+      query: (body) => ({
+        url: 'api/stream/player/stop',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _error, arg) => [{ type: 'MountStatus', id: `player-${arg.item_id}` }],
+    }),
   }),
 })
 
@@ -199,6 +232,82 @@ export interface MountTorrentResponse {
   mounted_files: string[]
 }
 
+export interface AudioTrack {
+  index: number
+  title: string
+  language: string
+  codec: string
+  channels: number
+  is_default: boolean
+}
+
+export interface SubtitleTrack {
+  index: number
+  title: string
+  language: string
+  codec: string
+  is_default: boolean
+  delivery_url?: string
+}
+
+export interface EpisodeInfo {
+  id: string
+  name: string
+  season_number: number
+  episode_number: number
+  duration_seconds: number
+  resume_seconds: number
+  is_played: boolean
+}
+
+export interface PlayerInfoResponse {
+  success: boolean
+  error?: string
+  item_id?: string
+  title?: string
+  ru_title?: string
+  media_type?: 'Movie' | 'Episode'
+  duration_seconds: number
+  resume_seconds: number
+  is_played: boolean
+  stream_url?: string
+  media_source_id?: string
+  audio_tracks?: AudioTrack[]
+  subtitles?: SubtitleTrack[]
+  episodes?: EpisodeInfo[]
+  current_season?: number
+  current_episode?: number
+  has_next_episode?: boolean
+  next_episode?: EpisodeInfo
+}
+
+export interface PlaybackStartRequest {
+  item_id: string
+  media_source_id?: string
+  audio_stream_index?: number
+  subtitle_stream_index?: number
+  position_seconds?: number
+}
+
+export interface PlaybackProgressRequest {
+  item_id: string
+  media_source_id?: string
+  position_seconds: number
+  is_paused: boolean
+  event?: string
+}
+
+export interface PlaybackStopRequest {
+  item_id: string
+  media_source_id?: string
+  position_seconds: number
+}
+
+export interface PlaybackActionResponse {
+  success: boolean
+  message?: string
+}
+
 export const {
   useGetTorrentsQuery,
   useLazyGetTorrentsQuery,
@@ -208,6 +317,11 @@ export const {
   useUnmountTorrentMutation,
   useGetTrackerHotlistQuery,
   useLazyGetTrackerHotlistQuery,
+  useGetPlayerInfoQuery,
+  useLazyGetPlayerInfoQuery,
+  useReportPlayerStartMutation,
+  useReportPlayerProgressMutation,
+  useReportPlayerStopMutation,
 } = torrentsApi
 
 

@@ -9,6 +9,7 @@ import {
   Trash2,
   Loader2,
   ArrowLeft,
+  Play,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
@@ -43,6 +44,7 @@ import {
 } from "./MovieMetadataSection"
 import { CriticsSection } from "./CriticsSection"
 import { TrailerModal } from "./TrailerModal"
+import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
 import type { VideoItem, MovieDoc } from "@/api/types"
 
 export function MovieModal() {
@@ -56,6 +58,7 @@ export function MovieModal() {
 
   const [showConfirmUnmount, setShowConfirmUnmount] = useState(false)
   const [activeTrailer, setActiveTrailer] = useState<VideoItem | null>(null)
+  const [isCinemaPlayerOpen, setIsCinemaPlayerOpen] = useState(false)
   const isMobile = useIsMobile()
 
   const { data: mountStatus } = useGetMountedStatusQuery(
@@ -350,38 +353,31 @@ export function MovieModal() {
                     </div>
                   </div>
 
-                  <a
-                    href={`http://${typeof window !== "undefined" ? window.location.hostname : "localhost"}:8096`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0"
+                  <Button
+                    size="sm"
+                    onClick={() => setIsCinemaPlayerOpen(true)}
+                    className="h-8 px-3 text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-black hover:from-emerald-400 hover:to-teal-400 gap-1.5 shadow-md shadow-emerald-950/50 active:scale-95 shrink-0"
                   >
-                    <Button
-                      size="sm"
-                      className="h-8 px-3 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 gap-1 shadow-md shadow-emerald-900/30"
-                    >
-                      <span>Смотреть</span>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
-                  </a>
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    <span>Смотреть</span>
+                  </Button>
                 </div>
               )}
 
               {/* Alternate Russian Titles */}
               {activeMovie.russian_titles.length > 1 && (
                 <div className="text-left pt-1">
-                  <p className="text-xs font-semibold text-zinc-400 mb-1 flex items-center gap-1.5">
-                    <Globe className="h-3.5 w-3.5 text-primary" />
-                    <span>Другие названия:</span>
-                  </p>
+                  <div className="text-[11px] font-semibold text-zinc-500 mb-1">
+                    Альтернативные названия:
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {activeMovie.russian_titles
                       .filter((t) => t !== mainTitle)
-                      .slice(0, 3)
-                      .map((t, idx) => (
+                      .slice(0, 5)
+                      .map((t, i) => (
                         <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded text-[11px] bg-cinema-850/80 text-muted-foreground border border-border/50"
+                          key={i}
+                          className="px-2 py-0.5 rounded-md bg-zinc-900/60 border border-zinc-800 text-[11px] text-zinc-400 font-normal"
                         >
                           {t}
                         </span>
@@ -430,12 +426,23 @@ export function MovieModal() {
                   imdbId={activeMovie.tconst}
                   year={activeMovie.year}
                   isSeries={isSeries}
+                  onPlayMedia={() => setIsCinemaPlayerOpen(true)}
                 />
               </div>
             </div>
 
             {/* Embedded Trailer Modal */}
             <TrailerModal video={activeTrailer} onClose={handleCloseTrailer} />
+
+            {/* Embedded Cinema Video Player Modal */}
+            {isCinemaPlayerOpen && (
+              <CinemaPlayerModal
+                tconst={activeMovie.tconst}
+                title={mainTitle}
+                ruTitle={activeMovie.title_ru || undefined}
+                onClose={() => setIsCinemaPlayerOpen(false)}
+              />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -591,6 +598,16 @@ export function MovieModal() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      {!showConfirmUnmount && (
+                        <Button
+                          size="sm"
+                          onClick={() => setIsCinemaPlayerOpen(true)}
+                          className="h-7 px-3 text-xs gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold shadow-sm active:scale-95 transition-all"
+                        >
+                          <Play className="h-3.5 w-3.5 fill-current" />
+                          <span>Смотреть онлайн</span>
+                        </Button>
+                      )}
                       {showConfirmUnmount ? (
                         <div className="flex items-center gap-1.5">
                           <Button
@@ -677,6 +694,7 @@ export function MovieModal() {
               imdbId={activeMovie.tconst}
               year={activeMovie.year}
               isSeries={isSeries}
+              onPlayMedia={() => setIsCinemaPlayerOpen(true)}
             />
           </div>
         </DialogContent>
@@ -684,6 +702,16 @@ export function MovieModal() {
 
       {/* Embedded Trailer Modal */}
       <TrailerModal video={activeTrailer} onClose={() => setActiveTrailer(null)} />
+
+      {/* Embedded Cinema Video Player Modal */}
+      {isCinemaPlayerOpen && (
+        <CinemaPlayerModal
+          tconst={activeMovie.tconst}
+          title={mainTitle}
+          ruTitle={activeMovie.title_ru || undefined}
+          onClose={() => setIsCinemaPlayerOpen(false)}
+        />
+      )}
     </>
   )
 }
