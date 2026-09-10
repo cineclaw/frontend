@@ -247,3 +247,158 @@ export function getQualityOptions(
     }
   })
 }
+
+export function getTorrentSizeBytes(torrent: TorrentResult): number {
+  if (torrent.size && torrent.size > 0) return torrent.size
+  if (torrent.size_human) {
+    const clean = torrent.size_human.trim()
+    const match = clean.match(/([\d.,]+)\s*([a-zA-Zа-яА-Я]+)/)
+    if (match) {
+      const val = parseFloat(match[1].replace(',', '.'))
+      const unit = match[2].toLowerCase()
+      if (unit.startsWith('т') || unit.startsWith('t')) return val * 1024 * 1024 * 1024 * 1024
+      if (unit.startsWith('г') || unit.startsWith('g')) return val * 1024 * 1024 * 1024
+      if (unit.startsWith('м') || unit.startsWith('m')) return val * 1024 * 1024
+      if (unit.startsWith('к') || unit.startsWith('k')) return val * 1024
+    }
+  }
+  return 0
+}
+
+export function getTorrentHash(torrent: TorrentResult): string {
+  if (torrent.info_hash) return torrent.info_hash.toLowerCase()
+  if (torrent.magnet) {
+    const match = torrent.magnet.match(/urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})/i)
+    if (match) return match[1].toLowerCase()
+  }
+  if (torrent.id && /^[a-fA-F0-9]{40}$/.test(torrent.id)) {
+    return torrent.id.toLowerCase()
+  }
+  return ''
+}
+
+export function computeBitrateMbps(
+  torrentSizeBytes: number,
+  durationSeconds: number,
+  isSeries: boolean = false,
+  episodesCount: number = 1,
+  torrentTitle: string = ''
+): number {
+  if (torrentSizeBytes <= 0 || durationSeconds <= 0) return 0
+
+  let effectiveBytes = torrentSizeBytes
+
+  // If this is a TV series and the torrent appears to be a season pack or multi-episode
+  if (isSeries && episodesCount > 1) {
+    const titleLower = torrentTitle.toLowerCase()
+    const isPack =
+      torrentSizeBytes > 6 * 1024 * 1024 * 1024 ||
+      titleLower.includes('сезон') ||
+      titleLower.includes('season') ||
+      /s\d+/i.test(titleLower) ||
+      /сери[йи]/i.test(titleLower) ||
+      /episodes?\s*\d+/i.test(titleLower)
+
+    if (isPack) {
+      effectiveBytes = torrentSizeBytes / episodesCount
+    }
+  }
+
+  // Bitrate: bits per second / 1e6
+  const bps = (effectiveBytes * 8) / durationSeconds
+  return bps / 1_000_000
+}
+
+export function formatBitrate(mbps: number): string {
+  if (!mbps || mbps <= 0 || !isFinite(mbps)) return ''
+  if (mbps >= 10) {
+    return `${mbps.toFixed(1)} Мбит/с`
+  }
+  if (mbps >= 1) {
+    return `${mbps.toFixed(1)} Мбит/с`
+  }
+  return `${Math.round(mbps * 1000)} Кбит/с`
+}
+
+export interface TorrentQualityOption {
+  id: string
+  torrent: TorrentResult
+  tier: QualityTier
+  resolutionLabel: string
+  resolutionBadge: string
+  sizeFormatted: string
+  sizeBytes: number
+  bitrateMbps: number
+  bitrateLabel: string
+  seeds: number
+  audioLabel: string
+  tracker: string
+  isActive: boolean
+}
+
+export function buildTorrentQualityOptions(
+  torrents: TorrentResult[] | undefined,
+  activeHash: string = '',
+  durationSeconds: number = 0,
+  isSeries: boolean = false,
+  episodesCount: number = 1
+): TorrentQualityOption[] {
+  if (!torrents || torrents.length === 0) return []
+
+  const effectiveDuration = durationSeconds > 0 ? durationSeconds : isSeries ? 2700 : 6300
+  const normalizedActiveHash = (activeHash || '').toLowerCase()
+
+  const tierMap: Record<QualityTier, { label: string; badge: string; rank: number }> = {
+    '4k': { label: '4K Ultra HD', badge: '4K', rank: 4 },
+    '1080p': { label: '1080p Full HD', badge: '1080p', rank: 3 },
+    '720p': { label: '720p HD', badge: '720p', rank: 2 },
+    'sd': { label: 'SD Качество', badge: 'SD', rank: 1 },
+  }
+
+  const seenHashes = new Set<string>()
+  const options: TorrentQualityOption[] = []
+
+  for (const t of torrents) {
+    const hash = getTorrentHash(t)
+    const key = hash || t.id || t.magnet || t.title
+    if (seenHashes.has(key)) continue
+    seenHashes.add(key)
+
+    const tier = classifyResolution(t)
+    const tierMeta = tierMap[tier] || tierMap['1080p']
+    const sizeBytes = getTorrentSizeBytes(t)
+    const bitrateMbps = computeBitrateMbps(sizeBytes, effectiveDuration, isSeries, episodesCount, t.title || '')
+    const bitrateLabel = formatBitrate(bitrateMbps)
+    const isActive = Boolean(normalizedActiveHash && hash && normalizedActiveHash === hash)
+
+    options.push({
+      id: hash || t.id,
+      torrent: t,
+      tier,
+      resolutionLabel: tierMeta.label,
+      resolutionBadge: tierMeta.badge,
+      sizeFormatted: t.size_human || (sizeBytes > 0 ? `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ` : ''),
+      sizeBytes,
+      bitrateMbps,
+      bitrateLabel,
+      seeds: t.seeds || 0,
+      audioLabel: extractAudioLabel(t.title || ''),
+      tracker: t.tracker || (t.trackers && t.trackers[0]) || '',
+      isActive,
+    })
+  }
+
+  // Sort by Quality Tier descending (4K -> 1080p -> 720p -> SD),
+  // then by Bitrate descending (if difference > 0.5 Mbps),
+  // then by Seeds descending
+  return options.sort((a, b) => {
+    const rankDiff = tierMap[b.tier].rank - tierMap[a.tier].rank
+    if (rankDiff !== 0) return rankDiff
+
+    if (Math.abs(b.bitrateMbps - a.bitrateMbps) > 0.5) {
+      return b.bitrateMbps - a.bitrateMbps
+    }
+    return b.seeds - a.seeds
+  })
+}
+

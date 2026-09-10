@@ -38,97 +38,14 @@ import {
   type PlayerInfoResponse,
   type TorrentResult,
 } from '@/api/torrentsApi'
-import { classifyResolution, extractAudioLabel } from '@/lib/torrentSelector'
+import {
+  classifyResolution,
+  extractAudioLabel,
+  buildTorrentQualityOptions,
+  getTorrentHash,
+  type TorrentQualityOption,
+} from '@/lib/torrentSelector'
 import { formatBytes } from '@/lib/utils'
-
-export interface QualityPreset {
-  id: string
-  label: string
-  shortLabel: string
-  description: string
-  width?: number
-  height?: number
-  videoBitrate?: number
-  audioBitrate?: number
-  isOriginal?: boolean
-}
-
-export function buildQualityLadder(info: PlayerInfoResponse): QualityPreset[] {
-  const w = info.width || 0
-  const h = info.height || 0
-  const is4K = w >= 2500 || h >= 1400
-  const is1080p = !is4K && (w >= 1300 || h >= 750 || (w === 0 && h === 0))
-  const is720p = !is4K && !is1080p && (w >= 900 || h >= 500)
-
-  const ladder: QualityPreset[] = []
-
-  // 1. Original (Direct Stream copy for native codecs, highest bitrate transcode otherwise)
-  ladder.push({
-    id: 'original',
-    label: `Оригинал (${is4K ? '4K UHD' : is1080p ? '1080p FHD' : is720p ? '720p HD' : 'SD'})`,
-    shortLabel: is4K ? '4K' : is1080p ? '1080p' : is720p ? '720p' : 'SD',
-    description: 'Без сжатия • Direct Stream',
-    isOriginal: true,
-    videoBitrate: is4K ? 45000000 : is1080p ? 25000000 : is720p ? 15000000 : 8000000,
-    audioBitrate: 384000,
-  })
-
-  // 2. 1080p High (6 Mbps)
-  if (is4K || is1080p) {
-    ladder.push({
-      id: '1080p_high',
-      label: '1080p FHD (Высокое • 6 Мбит/с)',
-      shortLabel: '1080p HQ',
-      description: 'Высокая чёткость для ТВ и ПК',
-      width: 1920,
-      height: 1080,
-      videoBitrate: 6000000,
-      audioBitrate: 256000,
-    })
-  }
-
-  // 3. 1080p Standard / Web (3.5 Mbps)
-  if (is4K || is1080p) {
-    ladder.push({
-      id: '1080p_std',
-      label: '1080p FHD (Веб • 3.5 Мбит/с)',
-      shortLabel: '1080p',
-      description: 'Оптимально для веба и плавного потока',
-      width: 1920,
-      height: 1080,
-      videoBitrate: 3500000,
-      audioBitrate: 192000,
-    })
-  }
-
-  // 4. 720p HD (2.2 Mbps)
-  if (is4K || is1080p || is720p) {
-    ladder.push({
-      id: '720p',
-      label: '720p HD (Эконом • 2.2 Мбит/с)',
-      shortLabel: '720p',
-      description: 'Для мобильных сетей и слабого интернета',
-      width: 1280,
-      height: 720,
-      videoBitrate: 2200000,
-      audioBitrate: 192000,
-    })
-  }
-
-  // 5. 480p SD (1.2 Mbps)
-  ladder.push({
-    id: '480p',
-    label: '480p SD (Низкий трафик • 1.2 Мбит/с)',
-    shortLabel: '480p',
-    description: 'Минимальный расход трафика',
-    width: 854,
-    height: 480,
-    videoBitrate: 1200000,
-    audioBitrate: 128000,
-  })
-
-  return ladder
-}
 
 interface CinemaPlayerModalProps {
   tconst: string
@@ -233,40 +150,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [nextEpisodePrompt, setNextEpisodePrompt] = useState<boolean>(false)
   const [nextCountdown, setNextCountdown] = useState<number>(10)
 
-  // Quality presets & ladder
-  const [selectedQualityId, setSelectedQualityId] = useState<string>(() => {
-    try {
-      return localStorage.getItem('cineclaw_player_quality') || 'original'
-    } catch {
-      return 'original'
-    }
-  })
-
-  const qualityOptions = useMemo(() => {
-    return playerInfo ? buildQualityLadder(playerInfo) : []
-  }, [playerInfo])
-
-  const activeQuality = useMemo(() => {
-    return qualityOptions.find((q) => q.id === selectedQualityId) || qualityOptions[0] || null
-  }, [qualityOptions, selectedQualityId])
-
-  const prevQualityIdRef = useRef<string>(selectedQualityId)
-  useEffect(() => {
-    if (prevQualityIdRef.current !== selectedQualityId) {
-      playSessionIdRef.current = Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
-      prevQualityIdRef.current = selectedQualityId
-    }
-  }, [selectedQualityId])
-
-  const handleQualityChange = useCallback((preset: QualityPreset) => {
-    setSelectedQualityId(preset.id)
-    setShowQualityMenu(false)
-    try {
-      localStorage.setItem('cineclaw_player_quality', preset.id)
-    } catch {}
-    setQualityToast(`Качество: ${preset.shortLabel}`)
-    setTimeout(() => setQualityToast(null), 2500)
-  }, [])
+  // Pending seek time ref to smoothly preserve playback position across torrent/quality switches
+  const pendingSeekTimeRef = useRef<number | null>(null)
 
   // Double tap animation indicators
   const [tapRipple, setTapRipple] = useState<'left' | 'right' | null>(null)
@@ -314,6 +199,64 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     return list.sort((a, b) => (b.seeds || 0) - (a.seeds || 0))
   }, [rawTorrents, currentSeason])
 
+  // Compute effective duration & episodes count for accurate torrent bitrate approximation
+  const effectiveDuration = useMemo(() => {
+    if (playerInfo?.duration_seconds && playerInfo.duration_seconds > 0) {
+      return playerInfo.duration_seconds
+    }
+    if (duration && duration > 0) {
+      return duration
+    }
+    return currentSeason !== undefined ? 2700 : 6300
+  }, [playerInfo?.duration_seconds, duration, currentSeason])
+
+  const episodesCount = useMemo(() => {
+    return Math.max(1, playerInfo?.episodes?.length || 1)
+  }, [playerInfo?.episodes])
+
+  // Available torrent quality options with calculated bitrates
+  const qualityTorrentOptions = useMemo<TorrentQualityOption[]>(() => {
+    return buildTorrentQualityOptions(
+      sortedTorrentsBySeeds,
+      playerInfo?.media_source_id || '',
+      effectiveDuration,
+      currentSeason !== undefined || playerInfo?.media_type === 'Episode',
+      episodesCount
+    )
+  }, [
+    sortedTorrentsBySeeds,
+    playerInfo?.media_source_id,
+    effectiveDuration,
+    currentSeason,
+    playerInfo?.media_type,
+    episodesCount,
+  ])
+
+  // Active torrent option
+  const activeTorrentOption = useMemo(() => {
+    return qualityTorrentOptions.find((o) => o.isActive) || null
+  }, [qualityTorrentOptions])
+
+  // Current quality display for the player control bar button
+  const currentQualityDisplay = useMemo(() => {
+    if (activeTorrentOption) {
+      return {
+        badge: activeTorrentOption.resolutionBadge,
+        bitrate: activeTorrentOption.bitrateLabel,
+      }
+    }
+    const w = playerInfo?.width || 0
+    const h = playerInfo?.height || 0
+    const is4K = w >= 2500 || h >= 1400
+    const is1080p = !is4K && (w >= 1300 || h >= 750 || (w === 0 && h === 0))
+    const is720p = !is4K && !is1080p && (w >= 900 || h >= 500)
+    const badge = is4K ? '4K' : is1080p ? '1080p' : is720p ? '720p' : 'SD'
+    return {
+      badge,
+      bitrate: '',
+    }
+  }, [activeTorrentOption, playerInfo?.width, playerInfo?.height])
+
   // Track continuous buffering / waiting time (trigger prompt after 30s)
   useEffect(() => {
     // If playing smoothly and not buffering, reset timer & prompt
@@ -349,6 +292,10 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current)
       stallTimerRef.current = null
+    }
+
+    if (pendingSeekTimeRef.current === null && videoRef.current) {
+      pendingSeekTimeRef.current = videoRef.current.currentTime || currentTime || 0
     }
 
     try {
@@ -388,6 +335,33 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       setIsMountingAlternate(false)
     }
   }
+
+  const handleSelectQualityTorrent = useCallback(
+    async (torrent: TorrentResult) => {
+      const tHash = getTorrentHash(torrent)
+      const currentHash = (playerInfo?.media_source_id || '').toLowerCase()
+
+      if (tHash && currentHash && tHash === currentHash) {
+        setShowQualityMenu(false)
+        return
+      }
+
+      // Preserve current playback timestamp
+      const video = videoRef.current
+      const currentPos = video?.currentTime ?? currentTime ?? 0
+      pendingSeekTimeRef.current = currentPos
+
+      setShowQualityMenu(false)
+      const tier = classifyResolution(torrent).toUpperCase()
+      setQualityToast(`Переключение: ${tier}...`)
+
+      await handleSelectAlternateTorrent(torrent)
+
+      setQualityToast(`Качество: ${tier}`)
+      setTimeout(() => setQualityToast(null), 2500)
+    },
+    [playerInfo?.media_source_id, currentTime, handleSelectAlternateTorrent]
+  )
 
   const handleClosePlayer = useCallback(() => {
     if (stallTimerRef.current) {
@@ -504,9 +478,9 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     [getDirectStreamUrl]
   )
 
-  // HLS stream construction helper with selected audio track, quality preset & session binding
+  // Stream construction helper with selected audio track & session binding
   const buildStreamUrl = useCallback(
-    (info: PlayerInfoResponse, audioIdx: number | null, sessionId: string, quality: QualityPreset | null) => {
+    (info: PlayerInfoResponse, audioIdx: number | null, sessionId: string) => {
       if (!info.stream_url) return ''
       let url = info.stream_url
 
@@ -515,61 +489,6 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         return url
       }
 
-      // Strip existing parameters to apply user choice cleanly
-      url = url.replace(/&?EnableAutoStreamCopy=[^&]*/g, '')
-      url = url.replace(/&?VideoBitRate=[^&]*/g, '')
-      url = url.replace(/&?AudioBitRate=[^&]*/g, '')
-      url = url.replace(/&?MaxWidth=[^&]*/g, '')
-      url = url.replace(/&?MaxHeight=[^&]*/g, '')
-
-      if (quality) {
-        if (quality.isOriginal) {
-          // Direct Stream copy for native formats (H.264/AAC), high-bitrate transcode otherwise
-          url += `&EnableAutoStreamCopy=true`
-          if (quality.videoBitrate) {
-            url += `&VideoBitRate=${quality.videoBitrate}`
-          }
-          if (quality.audioBitrate) {
-            url += `&AudioBitRate=${quality.audioBitrate}`
-          }
-        } else {
-          // Explicit bitrate preset / resolution ladder downscale
-          url += `&EnableAutoStreamCopy=false`
-          if (quality.videoBitrate) {
-            url += `&VideoBitRate=${quality.videoBitrate}`
-          }
-          if (quality.audioBitrate) {
-            url += `&AudioBitRate=${quality.audioBitrate}`
-          }
-          if (quality.width) {
-            url += `&MaxWidth=${quality.width}`
-          }
-          if (quality.height) {
-            url += `&MaxHeight=${quality.height}`
-          }
-        }
-      } else {
-        url += `&EnableAutoStreamCopy=true&VideoBitRate=35000000&AudioBitRate=384000`
-      }
-
-      if (!url.includes('VideoCodec=')) {
-        url += '&VideoCodec=h264'
-      }
-      if (!url.includes('AudioCodec=')) {
-        url += '&AudioCodec=aac'
-      }
-      if (!url.includes('TranscodingMaxAudioChannels=')) {
-        url += '&TranscodingMaxAudioChannels=2'
-      }
-      if (!url.includes('SegmentContainer=')) {
-        url += '&SegmentContainer=mp4'
-      }
-      if (!url.includes('MinSegments=')) {
-        url += '&MinSegments=2'
-      }
-      if (!url.includes('BreakOnNonKeyFrames=')) {
-        url += '&BreakOnNonKeyFrames=True'
-      }
       if (!url.includes('PlaySessionId=')) {
         url += `&PlaySessionId=${sessionId}`
       }
@@ -592,7 +511,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       prevItemIdRef.current = playerInfo.item_id
     }
 
-    const streamUrl = buildStreamUrl(playerInfo, selectedAudioIndex, playSessionIdRef.current, activeQuality)
+    const streamUrl = buildStreamUrl(playerInfo, selectedAudioIndex, playSessionIdRef.current)
     if (!streamUrl) return
 
     setIsBuffering(true)
@@ -609,11 +528,17 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       setShowResumePrompt(true)
     }
 
-    // Determine seek time: if it's a newly switched episode and resume decision hasn't been made,
-    // wait for user choice. If decision already made or no resume point, start as normal.
-    const targetSeekTime = isNewEpisode
-      ? (resumeDecisionMadeRef.current && playerInfo.resume_seconds && !playerInfo.is_played ? playerInfo.resume_seconds : 0)
-      : (video.currentTime || 0)
+    // Determine seek time: if pendingSeekTimeRef is set (e.g. from quality / torrent change), use it.
+    // If it's a newly switched episode and resume decision hasn't been made, wait for user choice.
+    // If decision already made or no resume point, start as normal.
+    const targetSeekTime =
+      pendingSeekTimeRef.current !== null
+        ? pendingSeekTimeRef.current
+        : isNewEpisode
+        ? resumeDecisionMadeRef.current && playerInfo.resume_seconds && !playerInfo.is_played
+          ? playerInfo.resume_seconds
+          : 0
+        : video.currentTime || 0
 
     const isHls = streamUrl.includes('.m3u8')
 
@@ -636,6 +561,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           if (targetSeekTime > 0) {
             video.currentTime = targetSeekTime
           }
+          pendingSeekTimeRef.current = null
           video.play().then(() => {
             setIsPlaying(true)
           }).catch(() => {
@@ -682,6 +608,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           if (targetSeekTime > 0) {
             video.currentTime = targetSeekTime
           }
+          pendingSeekTimeRef.current = null
           video.play().then(() => {
             setIsPlaying(true)
           }).catch(() => {
@@ -719,6 +646,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           if (targetSeekTime > 0) {
             video.currentTime = targetSeekTime
           }
+          pendingSeekTimeRef.current = null
           video.play().then(() => {
             setIsPlaying(true)
           }).catch(() => {
@@ -748,7 +676,14 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         hlsRef.current = null
       }
     }
-  }, [playerInfo?.item_id, selectedAudioIndex, activeQuality, buildStreamUrl, reportStart])
+  }, [
+    playerInfo?.item_id,
+    playerInfo?.media_source_id,
+    playerInfo?.stream_url,
+    selectedAudioIndex,
+    buildStreamUrl,
+    reportStart,
+  ])
 
   const handleConfirmResume = () => {
     resumeDecisionMadeRef.current = true
@@ -1664,75 +1599,131 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                 </div>
               )}
 
-              {/* Quality Dropdown */}
-              {qualityOptions.length > 0 && (
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowQualityMenu(!showQualityMenu)
-                      setShowAudioMenu(false)
-                      setShowSubtitleMenu(false)
-                      setShowSpeedMenu(false)
-                      setShowEpisodesDrawer(false)
-                    }}
-                    className={`p-2 rounded-xl transition flex items-center gap-1.5 text-xs font-bold ${
-                      showQualityMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
-                    }`}
-                    title="Качество видео"
-                  >
-                    <SlidersHorizontal className="h-4 w-4 md:h-5 md:w-5" />
-                    <span className="text-[11px] md:text-xs">
-                      {activeQuality ? activeQuality.shortLabel : 'Качество'}
+              {/* Quality & Torrents Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setShowQualityMenu(!showQualityMenu)
+                    setShowAudioMenu(false)
+                    setShowSubtitleMenu(false)
+                    setShowSpeedMenu(false)
+                    setShowEpisodesDrawer(false)
+                  }}
+                  className={`p-2 rounded-xl transition flex items-center gap-1.5 text-xs font-bold ${
+                    showQualityMenu ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-white/15 text-zinc-300'
+                  }`}
+                  title="Выбор раздачи и качества видео"
+                >
+                  <SlidersHorizontal className="h-4 w-4 md:h-5 md:w-5" />
+                  <span className="text-[11px] md:text-xs">
+                    {currentQualityDisplay.badge}
+                  </span>
+                  {currentQualityDisplay.bitrate && (
+                    <span className="text-[10px] text-zinc-400 font-normal hidden sm:inline">
+                      • {currentQualityDisplay.bitrate}
                     </span>
-                  </button>
+                  )}
+                </button>
 
-                  {showQualityMenu && (
-                    <div className="absolute bottom-12 right-0 w-64 md:w-72 p-2 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-2xl backdrop-blur-xl z-50 animate-fade-in">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
-                        <span>Качество видео</span>
-                        {playerInfo?.video_codec && (
-                          <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800/80 px-1.5 py-0.5 rounded uppercase">
-                            {playerInfo.video_codec}
-                          </span>
+                {showQualityMenu && (
+                  <div className="absolute bottom-12 right-0 w-72 sm:w-80 p-2 rounded-2xl bg-zinc-900/95 border border-white/10 shadow-2xl backdrop-blur-xl z-50 animate-fade-in">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-1.5 border-b border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <SlidersHorizontal className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Качество и раздачи</span>
+                      </div>
+                      {playerInfo?.video_codec && (
+                        <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800/80 px-1.5 py-0.5 rounded uppercase">
+                          {playerInfo.video_codec}
+                        </span>
+                      )}
+                    </div>
+
+                    {isLoadingTorrents ? (
+                      <div className="py-6 text-center text-xs text-zinc-400 flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                        <span>Загрузка доступных раздач...</span>
+                      </div>
+                    ) : qualityTorrentOptions.length === 0 ? (
+                      <div className="py-4 px-3 text-center text-xs text-zinc-400">
+                        <div>Раздачи не найдены</div>
+                        {playerInfo?.width && playerInfo?.height && (
+                          <div className="text-[10px] text-zinc-500 mt-1">
+                            Текущий поток: {playerInfo.width}x{playerInfo.height}
+                          </div>
                         )}
                       </div>
-                      <div className="max-h-64 overflow-y-auto mt-1 space-y-1">
-                        {qualityOptions.map((preset) => {
-                          const isSelected = activeQuality?.id === preset.id
+                    ) : (
+                      <div className="max-h-72 sm:max-h-80 overflow-y-auto mt-1 space-y-1 pr-1 custom-scrollbar">
+                        {qualityTorrentOptions.map((opt) => {
+                          const isSelected = opt.isActive
+                          const badgeColor =
+                            opt.tier === '4k'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              : opt.tier === '1080p'
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                              : opt.tier === '720p'
+                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                              : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+
                           return (
                             <button
-                              key={preset.id}
-                              onClick={() => handleQualityChange(preset)}
-                              className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition ${
+                              key={opt.id}
+                              disabled={isMountingAlternate}
+                              onClick={() => handleSelectQualityTorrent(opt.torrent)}
+                              className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 transition ${
                                 isSelected
-                                  ? 'bg-emerald-500/20 text-emerald-400 font-bold'
-                                  : 'hover:bg-white/10 text-zinc-300'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold'
+                                  : 'hover:bg-white/10 text-zinc-300 border border-transparent'
                               }`}
                             >
-                              <div className="min-w-0 pr-2">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-semibold">{preset.label}</span>
-                                  {preset.isOriginal && (
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeColor}`}>
+                                    {opt.resolutionBadge}
+                                  </span>
+                                  {opt.bitrateLabel && (
+                                    <span className="font-semibold text-zinc-100">
+                                      {opt.bitrateLabel}
+                                    </span>
+                                  )}
+                                  {isSelected && (
                                     <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-medium">
-                                      Direct
+                                      Текущая
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[10px] text-zinc-400 mt-0.5 truncate">
-                                  {preset.description}
+                                <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                                  <span>{opt.sizeFormatted}</span>
+                                  <span>•</span>
+                                  <span className={opt.seeds > 0 ? 'text-emerald-400 font-medium' : 'text-zinc-500'}>
+                                    🌱 {opt.seeds}
+                                  </span>
+                                  {opt.audioLabel && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-cyan-400">{opt.audioLabel}</span>
+                                    </>
+                                  )}
+                                  {opt.tracker && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-zinc-500 uppercase">{opt.tracker}</span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                               {isSelected && (
-                                <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                                <Check className="h-4 w-4 shrink-0 text-emerald-400" />
                               )}
                             </button>
                           )
                         })}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Playback Speed Dropdown */}
               <div className="relative">
@@ -1900,19 +1891,16 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
             >
               Подождать
             </button>
-            {activeQuality && (activeQuality.isOriginal || (activeQuality.videoBitrate && activeQuality.videoBitrate > 3500000)) && (
+            {qualityTorrentOptions.length > 1 && (
               <button
                 onClick={() => {
                   setShowStallPrompt(false)
-                  const webPreset = qualityOptions.find((q) => q.id === '1080p_std') || qualityOptions.find((q) => q.id === '720p')
-                  if (webPreset) {
-                    handleQualityChange(webPreset)
-                  }
+                  setShowQualityMenu(true)
                 }}
-                className="px-3 py-1.5 rounded-xl bg-cyan-600/90 hover:bg-cyan-500 text-white text-xs font-semibold transition flex items-center gap-1 active:scale-95 shadow-md"
+                className="px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold transition flex items-center gap-1 active:scale-95 shadow-md"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                Снизить битрейт (3.5 Мбит/с)
+                Сменить качество
               </button>
             )}
             <button
