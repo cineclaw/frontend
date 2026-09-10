@@ -128,7 +128,7 @@ export const QualityActionButtons: React.FC<QualityActionButtonsProps> = ({
         folder_name: mountStatus?.folder_name,
       }).unwrap()
 
-      // Launch player immediately - it has Jellyfin auto-sync polling built in!
+      // Launch player immediately - it has auto-sync polling built in!
       dispatch(
         openCinemaPlayer({
           tconst,

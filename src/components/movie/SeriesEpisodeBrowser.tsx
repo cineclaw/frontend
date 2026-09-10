@@ -55,7 +55,7 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
   // 2. Fetch all episodes metadata from TMDB
   const { data: episodesData, isLoading: isLoadingEpisodes } = useGetSeriesEpisodesQuery(tconst)
 
-  // 3. Fetch mounted status in Jellyfin
+  // 3. Fetch mounted status in TorrServer
   const { data: mountStatus } = useGetMountedStatusQuery(tconst, {
     skip: !tconst,
   })
@@ -87,8 +87,8 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
     return (episodesData || []).filter((e) => e.season_number === activeSeasonNumber)
   }, [episodesData, activeSeasonNumber])
 
-  // Map Jellyfin episode progress
-  const jellyfinEpisodesMap = useMemo(() => {
+  // Map episode progress
+  const episodesProgressMap = useMemo(() => {
     const map = new Map<number, { id: string; resume_seconds: number; is_played: boolean }>()
     if (playerInfo?.episodes) {
       for (const ep of playerInfo.episodes) {
@@ -258,8 +258,8 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
 
         <div className="space-y-2.5">
           {currentEpisodes.map((ep: SeriesEpisodeItem) => {
-            const jfData = jellyfinEpisodesMap.get(ep.episode_number)
-            const hasResume = jfData && jfData.resume_seconds > 10 && !jfData.is_played
+            const epProgress = episodesProgressMap.get(ep.episode_number)
+            const hasResume = epProgress && epProgress.resume_seconds > 10 && !epProgress.is_played
             const stillUrl = ep.still_path
               ? `http://${window.location.hostname}:8090/poster${ep.still_path}`
               : undefined
@@ -326,7 +326,7 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
                     <h4 className="text-sm font-extrabold text-white group-hover:text-emerald-300 transition-colors truncate">
                       {ep.episode_number}. {ep.name || `Эпизод ${ep.episode_number}`}
                     </h4>
-                    {jfData?.is_played && (
+                    {epProgress?.is_played && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                         <Check className="w-3 h-3" />
                         Просмотрено

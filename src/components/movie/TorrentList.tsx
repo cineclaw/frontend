@@ -12,7 +12,6 @@ import {
   AlertCircle,
   Tv,
   Monitor,
-  Plus,
   Play,
   Loader2,
 } from "lucide-react"
@@ -25,7 +24,6 @@ import {
 import { useGetSeriesSeasonsQuery } from "@/api/moviesApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MountConflictDialog } from "./MountConflictDialog"
 
 interface TorrentListProps {
   query: string
@@ -99,10 +97,6 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
     pollingInterval: 5000,
   })
 
-  // Conflict dialog state
-  const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false)
-  const [conflictTorrent, setConflictTorrent] = useState<any>(null)
-  const [conflictTargetSeason, setConflictTargetSeason] = useState<number | null>(null)
   const [mountErrors, setMountErrors] = useState<Record<string, string>>({})
 
   // Active mounting torrent tracker
@@ -110,7 +104,6 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
 
   const mountedTorrentIds = new Set(
     (mountStatus?.mounted_files || []).map((f) => {
-      // file path often has hash or name
       return f
     })
   )
@@ -118,7 +111,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
   const executeMount = async (
     torrent: any,
     season: number | null,
-    mode: 'add' | 'replace' | 'add_version',
+    mode: 'add' | 'replace' | 'add_version' = 'add_version',
     versionName?: string
   ) => {
     const tId = torrent.info_hash || torrent.id
@@ -146,20 +139,19 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
         folder_name: mountStatus?.folder_name,
       }).unwrap()
 
-      if (res && res.success) {
-        setIsConflictDialogOpen(false)
-      }
+      return res
     } catch (err: any) {
       console.error("Mount failed:", err)
       const errMsg =
-        err?.data?.error || err?.error || err?.message || "Ошибка монтирования в Jellyfin"
+        err?.data?.error || err?.error || err?.message || "Ошибка подключения к TorrServer"
       setMountErrors((prev) => ({ ...prev, [tId]: errMsg }))
+      return null
     } finally {
       setMountingTorrentId(null)
     }
   }
 
-  const handleStreamToJellyfin = async (torrent: any, e: React.MouseEvent) => {
+  const handleStreamTorrent = async (torrent: any, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!torrent.magnet && !torrent.id) return
@@ -168,8 +160,6 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
     if (mountedTorrentIds.has(tId)) {
       if (onPlayMedia) {
         onPlayMedia()
-      } else {
-        window.open(`http://${window.location.hostname}:8096`, "_blank")
       }
       return
     }
@@ -180,33 +170,12 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
       ? null
       : selectedSeason || (torrent.seasons?.[0] ?? null)
 
-    // Check conflict against currently mounted library
-    let hasConflict = false
-    if (mountStatus?.mounted) {
-      if (!isSeries) {
-        hasConflict = true
-      } else {
-        if (isMultiSeason) {
-          hasConflict = Boolean(
-            mountStatus.seasons && mountStatus.seasons.length > 0
-          )
-        } else if (targetSeason !== null) {
-          hasConflict = Boolean(
-            mountStatus.seasons && mountStatus.seasons.includes(targetSeason)
-          )
-        }
+    const res = await executeMount(torrent, targetSeason, "add_version")
+    if (res && res.success) {
+      if (onPlayMedia) {
+        onPlayMedia()
       }
     }
-
-    if (hasConflict) {
-      setConflictTorrent(torrent)
-      setConflictTargetSeason(targetSeason)
-      setIsConflictDialogOpen(true)
-      return
-    }
-
-    // No conflict: mount directly with mode "add"
-    await executeMount(torrent, targetSeason, "add")
   }
 
   const items = refreshedTorrents || torrents || []
@@ -783,7 +752,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
 
                 {/* Actions */}
                 <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start md:self-center">
-                  {/* Add to Jellyfin Button */}
+                  {/* Stream / Play Button */}
                   {torrent.magnet || torrent.id ? (
                     <div className="flex flex-col items-end gap-1">
                       <Button
@@ -796,34 +765,27 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
                             : "bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 hover:text-white"
                         }`}
                         disabled={mountingTorrentId === (torrent.info_hash || torrent.id)}
-                        onClick={(e) => handleStreamToJellyfin(torrent, e)}
+                        onClick={(e) => handleStreamTorrent(torrent, e)}
                         title={
                           mountErrors[torrent.info_hash || torrent.id]
                             ? `Ошибка: ${mountErrors[torrent.info_hash || torrent.id]}. Нажмите, чтобы повторить.`
-                            : mountedTorrentIds.has(torrent.info_hash || torrent.id)
-                            ? "Смотреть онлайн"
-                            : "Добавить в библиотеку Jellyfin"
+                            : "Смотреть онлайн"
                         }
                       >
                         {mountingTorrentId === (torrent.info_hash || torrent.id) ? (
                           <>
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            <span>Монтирование...</span>
+                            <span>Подключение...</span>
                           </>
                         ) : mountErrors[torrent.info_hash || torrent.id] ? (
                           <>
                             <AlertCircle className="h-3.5 w-3.5 text-rose-400" />
                             <span>Повторить</span>
                           </>
-                        ) : mountedTorrentIds.has(torrent.info_hash || torrent.id) ? (
+                        ) : (
                           <>
                             <Play className="h-3.5 w-3.5 fill-current text-emerald-400" />
                             <span>Смотреть</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-3.5 w-3.5 text-indigo-400" />
-                            <span>Добавить</span>
                           </>
                         )}
                       </Button>
@@ -946,21 +908,6 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
         </div>
       )}
 
-      <MountConflictDialog
-        open={isConflictDialogOpen}
-        onOpenChange={setIsConflictDialogOpen}
-        torrent={conflictTorrent}
-        isSeries={isSeries}
-        targetSeason={conflictTargetSeason}
-        existingVersions={mountStatus?.versions}
-        onConfirm={(mode, versionName) =>
-          executeMount(conflictTorrent, conflictTargetSeason, mode, versionName)
-        }
-        isMounting={
-          mountingTorrentId ===
-          (conflictTorrent?.info_hash || conflictTorrent?.id)
-        }
-      />
     </div>
   )
 }

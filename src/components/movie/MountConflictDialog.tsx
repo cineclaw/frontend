@@ -82,11 +82,11 @@ export function MountConflictDialog({
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
             {isSeries && targetSeason ? (
-              <>Сезон {targetSeason} уже присутствует в вашей медиатеке Jellyfin.</>
+              <>Сезон {targetSeason} уже присутствует в вашей медиатеке.</>
             ) : isSeries ? (
-              <>Сериал уже добавлен в вашу медиатеку Jellyfin.</>
+              <>Сериал уже добавлен в вашу медиатеку.</>
             ) : (
-              <>Этот фильм уже добавлен в вашу медиатеку Jellyfin.</>
+              <>Этот фильм уже добавлен в вашу медиатеку.</>
             )}{" "}
             Выберите, как поступить с новым релизом:
           </DialogDescription>
@@ -153,7 +153,7 @@ export function MountConflictDialog({
                 </span>
               </h4>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                В Jellyfin появится удобный переключатель версий для фильма или эпизодов. Предыдущие файлы сохранятся.
+                В плеере появится удобный переключатель версий для фильма или эпизодов. Предыдущие файлы сохранятся.
               </p>
             </div>
           </div>
@@ -198,8 +198,8 @@ export function MountConflictDialog({
               </h4>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 {isSeries && targetSeason
-                  ? `Старый релиз сезона ${targetSeason} будет отмонтирован из Tiramisu, и файлы заменятся на этот релиз.`
-                  : `Текущие файлы релиза будут отмонтированы из Tiramisu, и Jellyfin переключится на новую раздачу.`}
+                  ? `Старый релиз сезона ${targetSeason} будет заменен на этот релиз.`
+                  : `Текущий релиз будет заменен в TorrServer на новую раздачу.`}
               </p>
             </div>
           </div>

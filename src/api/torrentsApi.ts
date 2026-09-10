@@ -236,7 +236,8 @@ export interface MountTorrentRequest {
 export interface MountTorrentResponse {
   success: boolean
   message: string
-  jellyfin_url: string
+  stream_url?: string
+  jellyfin_url?: string
   mounted_files: string[]
 }
 

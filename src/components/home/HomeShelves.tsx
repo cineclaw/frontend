@@ -87,7 +87,7 @@ export function HomeShelves() {
 
   return (
     <div className="space-y-6 pt-1 pb-8 w-full max-w-4xl mx-auto text-left">
-      {/* Continue Watching Shelf (Direct Jellyfin Resume Integration) */}
+      {/* Continue Watching Shelf (TorrServer SQLite Resume Integration) */}
       <ContinueWatchingShelf />
 
       {/* Featured Preview Shelf (Single Strip) */}

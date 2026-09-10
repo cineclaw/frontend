@@ -139,7 +139,7 @@ export const ContinueWatchingShelf: React.FC = () => {
                 loading="lazy"
                 className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 onError={(e) => {
-                  // Fallback to dark background if Jellyfin image fails
+                  // Fallback to dark background if backdrop image fails
                   ;(e.target as HTMLElement).style.display = "none"
                 }}
               />

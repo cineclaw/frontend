@@ -173,9 +173,9 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     { refetchOnMountOrArgChange: true }
   )
 
-  // Auto-retry polling if Jellyfin is still scanning the newly mounted library folder
+  // Auto-retry polling if TorrServer is still probing metadata or buffering peers
   const [syncRetryCount, setSyncRetryCount] = useState<number>(0)
-  const isSyncingWithJellyfin = Boolean(
+  const isPreparingStream = Boolean(
     !isLoading &&
     playerInfo &&
     !playerInfo.success &&
@@ -187,17 +187,17 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
      playerInfo.error?.includes('смонтирован')) &&
     syncRetryCount < 10
   )
-  const isErrorState = Boolean(!isSyncingWithJellyfin && (error || (playerInfo && !playerInfo.success)))
+  const isErrorState = Boolean(!isPreparingStream && (error || (playerInfo && !playerInfo.success)))
 
   useEffect(() => {
-    if (isSyncingWithJellyfin) {
+    if (isPreparingStream) {
       const timer = setTimeout(() => {
         setSyncRetryCount((prev) => prev + 1)
         refetch()
       }, 1500)
       return () => clearTimeout(timer)
     }
-  }, [isSyncingWithJellyfin, refetch])
+  }, [isPreparingStream, refetch])
 
   const [reportStart] = useReportPlayerStartMutation()
   const [reportProgress] = useReportPlayerProgressMutation()
@@ -317,7 +317,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   // Track continuous buffering / waiting time (trigger prompt after 30s)
   useEffect(() => {
     // If playing smoothly and not buffering, reset timer & prompt
-    if (isPlaying && !isBuffering && !isSyncingWithJellyfin) {
+    if (isPlaying && !isBuffering && !isPreparingStream) {
       if (stallTimerRef.current) {
         clearTimeout(stallTimerRef.current)
         stallTimerRef.current = null
@@ -327,7 +327,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }
 
     // If waiting/buffering/syncing, start 30s countdown
-    if ((isBuffering || isSyncingWithJellyfin) && !showStallPrompt) {
+    if ((isBuffering || isPreparingStream) && !showStallPrompt) {
       if (!stallTimerRef.current) {
         stallTimerRef.current = setTimeout(() => {
           setShowStallPrompt(true)
@@ -341,7 +341,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         stallTimerRef.current = null
       }
     }
-  }, [isPlaying, isBuffering, isSyncingWithJellyfin, showStallPrompt])
+  }, [isPlaying, isBuffering, isPreparingStream, showStallPrompt])
 
   const handleSelectAlternateTorrent = async (torrent: TorrentResult) => {
     setIsMountingAlternate(true)
@@ -432,7 +432,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }
   }, [playerInfo?.audio_tracks, selectedAudioIndex])
 
-  // Unique playSessionId for Jellyfin transcoding worker coordination
+  // Unique playSessionId for streaming session coordination
   const playSessionIdRef = useRef<string>(
     Math.random().toString(36).substring(2, 12) + Date.now().toString(36)
   )
@@ -527,7 +527,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         return url
       }
 
-      // Strip existing parameters to apply user choice cleanly (Legacy Jellyfin fallback)
+      // Strip existing parameters to apply user choice cleanly
       url = url.replace(/&?EnableAutoStreamCopy=[^&]*/g, '')
       url = url.replace(/&?VideoBitRate=[^&]*/g, '')
       url = url.replace(/&?AudioBitRate=[^&]*/g, '')
@@ -1199,7 +1199,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       )}
 
       {/* Syncing / Scanning State */}
-      {isSyncingWithJellyfin && (
+      {isPreparingStream && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-20 text-center px-4">
           <Loader2 className="h-12 w-12 text-emerald-400 animate-spin" />
           <p className="mt-4 text-base text-zinc-200 font-medium">Подключение к торрент-потоку...</p>

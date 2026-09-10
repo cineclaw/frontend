@@ -346,7 +346,7 @@ export function MovieModal() {
                 </div>
               )}
 
-              {/* Mounted in Jellyfin Card */}
+              {/* Mounted Library Card */}
               {mountStatus?.mounted && (
                 <div className="p-3.5 rounded-2xl border border-emerald-500/30 bg-emerald-950/25 flex items-center justify-between gap-3 text-left">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -636,7 +636,7 @@ export function MovieModal() {
                   </div>
                 )}
 
-                {/* Mounted in Jellyfin Status & Unmount Action */}
+                {/* Mounted Library Status & Actions */}
                 {mountStatus?.mounted && (
                   <div className="mt-3.5 p-3 rounded-xl border border-emerald-500/30 bg-emerald-950/25 flex flex-wrap items-center justify-between gap-2.5">
                     <div className="flex items-center gap-2 min-w-0">
