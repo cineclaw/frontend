@@ -22,6 +22,8 @@ import {
   Gauge,
   Zap,
   SlidersHorizontal,
+  ExternalLink,
+  Copy,
 } from 'lucide-react'
 import {
   useGetPlayerInfoQuery,
@@ -177,7 +179,9 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     !isLoading &&
     playerInfo &&
     !playerInfo.success &&
-    (playerInfo.error?.includes('сканирует') ||
+    (playerInfo.error?.includes('метадан') ||
+     playerInfo.error?.includes('подключен') ||
+     playerInfo.error?.includes('сканирует') ||
      playerInfo.error?.includes('серий') ||
      playerInfo.error?.includes('Сезон') ||
      playerInfo.error?.includes('смонтирован')) &&
@@ -223,6 +227,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [showSpeedMenu, setShowSpeedMenu] = useState<boolean>(false)
   const [showEpisodesDrawer, setShowEpisodesDrawer] = useState<boolean>(false)
   const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false)
+  const [showExternalMenu, setShowExternalMenu] = useState<boolean>(false)
+  const [copiedLink, setCopiedLink] = useState<boolean>(false)
   const [qualityToast, setQualityToast] = useState<string | null>(null)
   const [nextEpisodePrompt, setNextEpisodePrompt] = useState<boolean>(false)
   const [nextCountdown, setNextCountdown] = useState<number>(10)
@@ -445,11 +451,58 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       clearTimeout(controlsTimeoutRef.current)
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (!showAudioMenu && !showSubtitleMenu && !showSpeedMenu && !showQualityMenu && !showEpisodesDrawer && isPlaying) {
+      if (
+        !showAudioMenu &&
+        !showSubtitleMenu &&
+        !showSpeedMenu &&
+        !showQualityMenu &&
+        !showEpisodesDrawer &&
+        !showExternalMenu &&
+        isPlaying
+      ) {
         setShowControls(false)
       }
     }, 3200)
-  }, [showAudioMenu, showSubtitleMenu, showSpeedMenu, showQualityMenu, showEpisodesDrawer, isPlaying])
+  }, [
+    showAudioMenu,
+    showSubtitleMenu,
+    showSpeedMenu,
+    showQualityMenu,
+    showEpisodesDrawer,
+    showExternalMenu,
+    isPlaying,
+  ])
+
+  // Resolve direct stream URL for external players (VLC, IINA, Infuse)
+  const getDirectStreamUrl = useCallback(() => {
+    if (!playerInfo?.media_source_id) return ''
+    const host = window.location.hostname || 'localhost'
+    const match = playerInfo.stream_url?.match(/index=(\d+)/)
+    const index = match ? match[1] : '0'
+    return `http://${host}:8092/stream?link=${playerInfo.media_source_id}&index=${index}&play`
+  }, [playerInfo])
+
+  // External player launcher and link copier
+  const handleOpenExternal = useCallback(
+    (player: 'vlc' | 'iina' | 'infuse' | 'copy') => {
+      const directUrl = getDirectStreamUrl()
+      if (!directUrl) return
+
+      if (player === 'vlc') {
+        window.location.href = `vlc://${directUrl}`
+      } else if (player === 'iina') {
+        window.location.href = `iina://weblink?url=${encodeURIComponent(directUrl)}`
+      } else if (player === 'infuse') {
+        window.location.href = `infuse://x-callback-url/play?url=${encodeURIComponent(directUrl)}`
+      } else if (player === 'copy') {
+        navigator.clipboard.writeText(directUrl)
+        setCopiedLink(true)
+        setTimeout(() => setCopiedLink(false), 2000)
+      }
+      setShowExternalMenu(false)
+    },
+    [getDirectStreamUrl]
+  )
 
   // HLS stream construction helper with selected audio track, quality preset & session binding
   const buildStreamUrl = useCallback(
@@ -457,7 +510,24 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       if (!info.stream_url) return ''
       let url = info.stream_url
 
-      // Strip existing parameters to apply user choice cleanly
+      // TorrServer GStreamer HLS stream (/torr/gst/...)
+      if (url.includes('/torr/gst/') || url.includes('/gst/')) {
+        if (audioIdx !== null) {
+          if (url.includes('audio=')) {
+            url = url.replace(/audio=\d+/, `audio=${audioIdx}`)
+          } else {
+            url += (url.includes('?') ? '&' : '?') + `audio=${audioIdx}`
+          }
+        }
+        return url
+      }
+
+      // Direct stream / non-HLS stream
+      if (url.includes('/torr/') || !url.includes('.m3u8')) {
+        return url
+      }
+
+      // Strip existing parameters to apply user choice cleanly (Legacy Jellyfin fallback)
       url = url.replace(/&?EnableAutoStreamCopy=[^&]*/g, '')
       url = url.replace(/&?VideoBitRate=[^&]*/g, '')
       url = url.replace(/&?AudioBitRate=[^&]*/g, '')
@@ -557,7 +627,39 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       ? (resumeDecisionMadeRef.current && playerInfo.resume_seconds && !playerInfo.is_played ? playerInfo.resume_seconds : 0)
       : (video.currentTime || 0)
 
-    if (Hls.isSupported()) {
+    const isHls = streamUrl.includes('.m3u8')
+
+    if (!isHls) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+
+      video.pause()
+      video.src = streamUrl
+      video.load()
+
+      const handleLoadedMetadata = () => {
+        setIsBuffering(false)
+        if (hasResume && !resumeDecisionMadeRef.current) {
+          video.pause()
+          setIsPlaying(false)
+        } else {
+          if (targetSeekTime > 0) {
+            video.currentTime = targetSeekTime
+          }
+          video.play().then(() => {
+            setIsPlaying(true)
+          }).catch(() => {
+            setIsPlaying(false)
+          })
+        }
+      }
+      video.addEventListener('loadedmetadata', handleLoadedMetadata)
+      return () => {
+        video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      }
+    } else if (Hls.isSupported()) {
       if (hlsRef.current) {
         hlsRef.current.destroy()
         hlsRef.current = null
@@ -690,6 +792,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       item_id: playerInfo?.item_id || '',
       media_source_id: playerInfo?.media_source_id,
       position_seconds: 0,
+      duration_seconds: duration || playerInfo?.duration_seconds,
       is_paused: false,
       event: 'seek',
     })
@@ -704,6 +807,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           item_id: cur.id,
           media_source_id: cur.mediaSourceId,
           position_seconds: cur.time,
+          duration_seconds: duration,
           close_player: true,
         })
       }
@@ -719,11 +823,12 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           item_id: cur.id,
           media_source_id: cur.mediaSourceId,
           position_seconds: cur.time,
+          duration_seconds: duration,
           close_player: true,
         })
       }
     }
-  }, [reportStop])
+  }, [reportStop, duration])
 
   // Periodic Progress Heartbeat (Every 10 seconds while playing)
   useEffect(() => {
@@ -740,6 +845,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           item_id: playerInfo.item_id!,
           media_source_id: playerInfo.media_source_id,
           position_seconds: time,
+          duration_seconds: duration || video.duration,
           is_paused: false,
           event: 'timeupdate',
         })
@@ -747,7 +853,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }, 10000)
 
     return () => clearInterval(interval)
-  }, [isPlaying, playerInfo?.item_id, playerInfo?.media_source_id, reportProgress])
+  }, [isPlaying, playerInfo?.item_id, playerInfo?.media_source_id, duration, reportProgress])
 
   // Video Event Handlers
   const handleTimeUpdate = () => {
@@ -802,6 +908,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         item_id: playerInfo?.item_id || '',
         media_source_id: playerInfo?.media_source_id,
         position_seconds: video.currentTime,
+        duration_seconds: duration || video.duration,
         is_paused: false,
         event: 'unpause',
       })
@@ -812,6 +919,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         item_id: playerInfo?.item_id || '',
         media_source_id: playerInfo?.media_source_id,
         position_seconds: video.currentTime,
+        duration_seconds: duration || video.duration,
         is_paused: true,
         event: 'pause',
       })
@@ -827,6 +935,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       item_id: playerInfo?.item_id || '',
       media_source_id: playerInfo?.media_source_id,
       position_seconds: newTime,
+      duration_seconds: duration || video.duration,
       is_paused: video.paused,
       event: 'seek',
     })
@@ -1035,6 +1144,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
               item_id: cur.id,
               media_source_id: cur.mediaSourceId,
               position_seconds: duration,
+              duration_seconds: duration,
               close_player: false,
               is_played: true,
             })
@@ -1092,8 +1202,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       {isSyncingWithJellyfin && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-20 text-center px-4">
           <Loader2 className="h-12 w-12 text-emerald-400 animate-spin" />
-          <p className="mt-4 text-base text-zinc-200 font-medium">Монтирование в Jellyfin...</p>
-          <p className="mt-1 text-xs text-zinc-400">Jellyfin регистрирует видеопоток (попытка {syncRetryCount + 1}/8)</p>
+          <p className="mt-4 text-base text-zinc-200 font-medium">Подключение к торрент-потоку...</p>
+          <p className="mt-1 text-xs text-zinc-400">TorrServer получает метаданные и буферизирует пиры (попытка {syncRetryCount + 1}/10)</p>
         </div>
       )}
 
@@ -1105,7 +1215,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           </div>
           <h3 className="text-lg font-bold text-white mb-2">Не удалось запустить воспроизведение</h3>
           <p className="text-sm text-zinc-400 max-w-md mb-6">
-            {playerInfo?.error || 'Ошибка связи с сервером Jellyfin. Проверьте монтирование тайтла.'}
+            {playerInfo?.error || 'Ошибка связи со стриминг-сервером TorrServer. Проверьте раздачу.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 relative z-50 pointer-events-auto">
             <button
@@ -1260,6 +1370,52 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
               <Zap className="h-4 w-4 fill-current" />
               <span className="text-xs font-semibold hidden sm:inline">Сменить раздачу</span>
             </button>
+
+            {/* External Players Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExternalMenu(!showExternalMenu)}
+                className="p-2 md:px-3.5 py-2 rounded-full bg-zinc-900/70 hover:bg-zinc-800 text-zinc-300 hover:text-white transition border border-white/10 backdrop-blur-md flex items-center gap-1.5"
+                title="Открыть во внешнем плеере"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span className="text-xs font-semibold hidden sm:inline">Внешний плеер</span>
+              </button>
+
+              {showExternalMenu && (
+                <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-zinc-900/95 border border-white/15 p-2 shadow-2xl backdrop-blur-xl z-50 flex flex-col gap-1">
+                  <div className="px-3 py-1.5 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    Открыть в приложении
+                  </div>
+                  <button
+                    onClick={() => handleOpenExternal('vlc')}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-200 hover:text-white hover:bg-white/10 transition text-left"
+                  >
+                    <span className="text-amber-400 text-base">🟠</span> VLC Player
+                  </button>
+                  <button
+                    onClick={() => handleOpenExternal('iina')}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-200 hover:text-white hover:bg-white/10 transition text-left"
+                  >
+                    <span className="text-sky-400 text-base">🔵</span> IINA (macOS)
+                  </button>
+                  <button
+                    onClick={() => handleOpenExternal('infuse')}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-zinc-200 hover:text-white hover:bg-white/10 transition text-left"
+                  >
+                    <span className="text-orange-500 text-base">🔥</span> Infuse (Apple TV / iOS)
+                  </button>
+                  <div className="h-px bg-white/10 my-1" />
+                  <button
+                    onClick={() => handleOpenExternal('copy')}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition text-left"
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span>{copiedLink ? 'Ссылка скопирована!' : 'Скопировать поток'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={handleClosePlayer}

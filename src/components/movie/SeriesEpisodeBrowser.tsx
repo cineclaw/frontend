@@ -184,7 +184,7 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
           {isSeasonMounted && (
             <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Смонтирован в Jellyfin
+              Готов к просмотру
             </span>
           )}
         </div>

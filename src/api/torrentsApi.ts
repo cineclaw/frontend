@@ -305,6 +305,7 @@ export interface PlaybackProgressRequest {
   item_id: string
   media_source_id?: string
   position_seconds: number
+  duration_seconds?: number
   is_paused: boolean
   event?: string
 }
@@ -313,6 +314,7 @@ export interface PlaybackStopRequest {
   item_id: string
   media_source_id?: string
   position_seconds: number
+  duration_seconds?: number
   close_player?: boolean
   is_played?: boolean
 }

@@ -246,7 +246,7 @@ export function MovieModal() {
             {showConfirmUnmount && (
               <div className="p-3 bg-destructive/15 border-b border-destructive/30 flex items-center justify-between gap-2 animate-in fade-in">
                 <span className="text-xs text-destructive font-medium">
-                  Удалить из библиотеки Jellyfin?
+                  Удалить из библиотеки?
                 </span>
                 <div className="flex items-center gap-1.5">
                   <Button
@@ -353,7 +353,7 @@ export function MovieModal() {
                     <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-emerald-300">
-                        Смонтировано в Jellyfin
+                        В медиатеке
                       </div>
                       <div className="text-[11px] text-zinc-400 font-mono truncate">
                         {mountStatus.file_count} файл(ов)
@@ -643,7 +643,7 @@ export function MovieModal() {
                       <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-emerald-300">
-                          Смонтировано в Jellyfin
+                          В медиатеке
                         </div>
                         <div className="text-[11px] text-zinc-400 font-mono truncate">
                           {mountStatus.file_count} файл(ов)
@@ -707,7 +707,7 @@ export function MovieModal() {
                           variant="outline"
                           className="h-7 px-2.5 text-xs gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/15 hover:text-destructive transition-colors"
                           onClick={() => setShowConfirmUnmount(true)}
-                          title="Отмонтировать и полностью удалить файлы и торрент из Jellyfin"
+                          title="Удалить файлы и торрент из медиатеки"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>Удалить из библиотеки</span>

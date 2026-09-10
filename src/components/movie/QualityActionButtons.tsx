@@ -222,7 +222,7 @@ export const QualityActionButtons: React.FC<QualityActionButtonsProps> = ({
                   {isMounted ? (
                     <span className="flex items-center gap-1 text-emerald-400 font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      В Jellyfin
+                      В медиатеке
                     </span>
                   ) : opt.bestTorrent ? (
                     <span className="text-zinc-400 font-mono">
@@ -295,7 +295,7 @@ export const QualityActionButtons: React.FC<QualityActionButtonsProps> = ({
           type="button"
           onClick={handleAdd}
           disabled={isMounting || isCurrentQualityMounted || mountSuccess || !activeOption?.bestTorrent}
-          title={isCurrentQualityMounted ? "Уже добавлено в медиатеку Jellyfin" : "Добавить в медиатеку Jellyfin"}
+          title={isCurrentQualityMounted ? "Уже добавлено в медиатеку" : "Добавить в медиатеку"}
           className={`py-3 px-3.5 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 border ${
             isCurrentQualityMounted || mountSuccess
               ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 cursor-default"

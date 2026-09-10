@@ -39,6 +39,10 @@ export default defineConfig({
         target: 'http://127.0.0.1:9118',
         changeOrigin: true,
       },
+      '/api/playback': {
+        target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://127.0.0.1:8090',
         changeOrigin: true,
@@ -51,11 +55,10 @@ export default defineConfig({
         target: 'http://127.0.0.1:9118',
         changeOrigin: true,
       },
-      '/jellyfin': {
-        target: process.env.JELLYFIN_DEV_TARGET || 'http://127.0.0.1:8096',
+      '/torr': {
+        target: 'http://127.0.0.1:8092',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/jellyfin/, ''),
-        ws: true,
+        rewrite: (path) => path.replace(/^\/torr/, ''),
       },
     },
   },

@@ -8,7 +8,6 @@ import {
   Server,
   Database,
   Film,
-  HardDrive,
   ShieldCheck,
   Wifi,
   Smartphone,
@@ -106,19 +105,11 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
         status: "checking",
       },
       {
-        id: "jellyfin",
-        name: "Jellyfin Media Server",
-        role: "Транскодирование и движок воспроизведения",
+        id: "torrserver",
+        name: "TorrServer MatriX",
+        role: "Движок торрент-стриминга на лету (GStreamer remuxing)",
         icon: Film,
-        url: `http://${hostname}:8096/System/Info/Public`,
-        status: "checking",
-      },
-      {
-        id: "tiramisu",
-        name: "Tiramisu FUSE Engine",
-        role: "Виртуальное монтирование торрентов для Jellyfin",
-        icon: HardDrive,
-        url: `http://${hostname}:9080/metrics`,
+        url: `http://${hostname}:8092/echo`,
         status: "checking",
       },
       {
@@ -215,8 +206,10 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
 
           if (res.ok) {
             let data: Record<string, unknown> = {}
+            let rawText = ""
             try {
-              data = await res.json()
+              rawText = await res.text()
+              data = JSON.parse(rawText)
             } catch {
               // Not json, raw text
             }
@@ -235,14 +228,11 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
             } else if (check.id === "tracker-proxy") {
               version = (data.version as string) || "1.0.0"
               details["Трекеры"] = "RuTracker, RuTor, NNM-Club"
-              details["Кэш"] = "bbolt (активен)"
-            } else if (check.id === "jellyfin") {
-              version = (data.Version as string) || "10.9.x"
-              if (data.ServerName) details["Имя сервера"] = data.ServerName as string
-              if (data.OperatingSystem) details["ОС сервера"] = data.OperatingSystem as string
-            } else if (check.id === "tiramisu") {
-              details["Точка монтирования"] = "/media/virtual (FUSE)"
-              details["Sequential streaming"] = "Активен"
+              details["Кэш"] = "bbolt & sqlite (активен)"
+            } else if (check.id === "torrserver") {
+              version = rawText.trim() || (data.version as string) || "MatriX"
+              details["Движок"] = "TorrServer MatriX"
+              details["Стриминг"] = "GStreamer HLS & Direct Stream"
             } else if (check.id === "flaresolverr") {
               details["Сессия Turnstile"] = "Готов"
             } else if (check.id === "cineclaw-ai") {
