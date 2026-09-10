@@ -129,23 +129,78 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
         url: `http://${hostname}:8191`,
         status: "checking",
       },
+      {
+        id: "cineclaw-ai",
+        name: "CineClaw AI Engine",
+        role: "Саммаризатор отзывов и критики (Gemini 2.5 Flash)",
+        icon: ShieldCheck,
+        url: `http://${hostname}:9120/health`,
+        status: "checking",
+      },
     ]
 
     setServices(checks)
 
-    // Execute checks in parallel
+    // First attempt: unified backend diagnostics endpoint (zero CORS/Mixed Content issues)
+    try {
+      const diagStart = performance.now()
+      const diagRes = await fetch("/torrents/system/diagnostic", { cache: "no-cache" })
+      if (diagRes.ok) {
+        const diagData: Record<
+          string,
+          {
+            status: string
+            version?: string
+            latency_ms?: number
+            details?: Record<string, string | number | boolean>
+            error?: string
+          }
+        > = await diagRes.json()
+
+        const updatedChecks = checks.map((check) => {
+          if (check.id === "frontend") return check
+          const svc = diagData[check.id]
+          if (svc) {
+            return {
+              ...check,
+              status: (svc.status === "online" ? "online" : "offline") as "online" | "offline",
+              version: svc.version || check.version || "1.0.0",
+              latencyMs:
+                svc.latency_ms !== undefined
+                  ? Math.round(svc.latency_ms)
+                  : Math.round(performance.now() - diagStart),
+              details: svc.details || {},
+              error: svc.error,
+            }
+          }
+          return {
+            ...check,
+            status: "offline" as const,
+            error: "Сервис не найден в диагностике",
+          }
+        })
+        setServices(updatedChecks)
+        setIsRefreshing(false)
+        return
+      }
+    } catch {
+      // Backend diagnostic failed, proceed with per-service fallback
+    }
+
+    // Fallback: Execute per-service checks in parallel
     const updatedChecks = await Promise.all(
       checks.map(async (check) => {
         if (check.id === "frontend") return check
 
         const start = performance.now()
         try {
-          // Direct check or fallback to relative path through Nginx
           let endpoint = check.url
           if (check.id === "imdb-indexer") {
             endpoint = "/status"
           } else if (check.id === "tracker-proxy") {
             endpoint = "/torrents/health"
+          } else if (check.id === "cineclaw-ai") {
+            endpoint = "/api/ai/health"
           }
 
           const controller = new AbortController()
@@ -190,6 +245,9 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
               details["Sequential streaming"] = "Активен"
             } else if (check.id === "flaresolverr") {
               details["Сессия Turnstile"] = "Готов"
+            } else if (check.id === "cineclaw-ai") {
+              version = (data.version as string) || "1.0.0"
+              details["Модель"] = "Gemini 2.5 Flash"
             }
 
             return {
@@ -200,7 +258,6 @@ export function DiagnosticModal({ isOpen, onClose }: DiagnosticModalProps) {
               details,
             }
           } else {
-            // Non-200 but reachable
             return {
               ...check,
               status: "offline" as const,
