@@ -43,6 +43,18 @@ export default defineConfig({
         target: 'http://127.0.0.1:9118',
         changeOrigin: true,
       },
+      '/api/watchlist': {
+        target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
+      '/api/home': {
+        target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
+      '/api/hub': {
+        target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://127.0.0.1:8090',
         changeOrigin: true,
@@ -53,6 +65,10 @@ export default defineConfig({
       },
       '/torrents': {
         target: 'http://127.0.0.1:9118',
+        changeOrigin: true,
+      },
+      '/gst': {
+        target: 'http://127.0.0.1:8092',
         changeOrigin: true,
       },
       '/torr': {

@@ -26,6 +26,16 @@ interface CatalogTile {
 
 const TILES: CatalogTile[] = [
   {
+    id: 'tracker_fresh',
+    title: 'Новинки на трекерах',
+    subtitle: 'Свежайшие релизы текущего года по дате публикации на трекерах',
+    badge: 'Свежие релизы',
+    icon: Flame,
+    iconColor: 'text-rose-400',
+    gradient: 'from-rose-950/35 via-orange-950/20 to-cinema-950',
+    borderHover: 'hover:border-rose-500/50 hover:shadow-rose-950/40',
+  },
+  {
     id: 'tracker_hotlist',
     title: 'Популярно на трекерах',
     subtitle: 'Самый активный рой сидов RuTracker и RuTor прямо сейчас',
@@ -153,7 +163,7 @@ export function CatalogTilesGrid() {
   const selectedMediaType = useAppSelector((state) => state.search.selectedMediaType)
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-1 sm:px-2 pt-2 pb-8">
+    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 pt-2 pb-8">
       {/* Media Type Switcher: Movies vs Series */}
       <div className="flex items-center justify-between mb-5 gap-3">
         <div className="flex items-center gap-1.5 p-1 bg-cinema-900/90 border border-border/80 rounded-xl shadow-inner backdrop-blur-md">

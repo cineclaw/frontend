@@ -90,12 +90,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary">
       {/* Top Navigation Header */}
       <Header onOpenDiagnostic={handleOpenDiagnostic} />
 
-      {/* Main Content Area (padding bottom accounts for fixed bottom dock + safe areas) */}
-      <main className="flex-1 flex flex-col pb-[calc(7.5rem+env(safe-area-inset-bottom))]">
+      {/* Main Content Area (padding bottom comfortably clears fixed bottom dock + safe areas) */}
+      <main className="flex-1 flex flex-col pb-[calc(11.5rem+env(safe-area-inset-bottom))]">
         {/* If searching: Results Header with hits count, timing, and grid/list view switcher */}
         {debouncedQuery.trim() && (
           <div className="container mx-auto max-w-3xl px-3 sm:px-6 pt-3 pb-1">
@@ -106,8 +106,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Results / Empty Suggestions Section (Results stack bottom-up: Rank 1 nearest thumb) */}
-        <section className="flex-1 container mx-auto max-w-3xl px-3 sm:px-6 py-2 flex flex-col justify-end">
+        {/* Results / Empty Suggestions Section (Search results stack bottom-up; Home shelves flow full-bleed edge-to-edge) */}
+        <section
+          className={`flex-1 flex flex-col ${
+            debouncedQuery.trim()
+              ? "container mx-auto max-w-3xl px-3 sm:px-6 py-2 justify-end"
+              : "w-full py-2 justify-start"
+          }`}
+        >
           <MovieList
             hits={debouncedQuery.trim() ? data?.hits : undefined}
             isLoading={isLoading && !!debouncedQuery.trim()}
@@ -162,6 +168,7 @@ export default function App() {
           ruTitle={activePlayer.ruTitle}
           initialSeason={activePlayer.initialSeason}
           initialEpisode={activePlayer.initialEpisode}
+          autoResume={activePlayer.autoResume}
           onClose={() => dispatch(closeCinemaPlayer())}
         />
       )}

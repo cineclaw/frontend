@@ -1,8 +1,10 @@
-import { Star, Clock, Users } from "lucide-react"
+import { Star, Clock, Users, Play, Loader2 } from "lucide-react"
 import { motion, type Variants } from "framer-motion"
 import type { SearchHit } from "@/api/types"
 import { Badge } from "@/components/ui/badge"
 import { MoviePoster } from "./MoviePoster"
+import { useQuickPlay } from "@/hooks/useQuickPlay"
+import { getTmdbImageUrl, getTmdbImageSrcSet } from "@/lib/tmdbImages"
 import {
   formatRating,
   formatRuntime,
@@ -50,6 +52,21 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
   const hasAlternateTitle = movie.title_ru && movie.title_orig && movie.title_ru !== movie.title_orig
   const runtimeFormatted = formatRuntime(movie.runtime_minutes)
 
+  const { quickPlay, isQuickPlaying } = useQuickPlay()
+  const isSeries = movie.title_type === "tvSeries" || movie.title_type === "tvMiniSeries"
+  const isTargetQuickPlaying = isQuickPlaying(movie.tconst)
+
+  const handleQuickPlay = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    quickPlay({
+      tconst: movie.tconst,
+      title: movie.title_primary || movie.title_ru || movie.title_orig || "",
+      ruTitle: movie.title_ru || undefined,
+      isSeries,
+      year: movie.year,
+    })
+  }
+
   // Color-coded rating badge
   const ratingVal = movie.rating || 0
   const ratingColor =
@@ -60,12 +77,14 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
       : "text-zinc-400 bg-zinc-800/40 border-border/40"
 
   if (viewMode === "list") {
-    const listPosterSrc = posters.medium || posters.large || `/poster/${movie.tconst}?size=w185&v=2`
-    const listPosterSrcSet = [
-      `${posters.small || `/poster/${movie.tconst}?size=w154&v=2`} 154w`,
-      `${posters.medium || `/poster/${movie.tconst}?size=w185&v=2`} 185w`,
-      `${posters.large || `/poster/${movie.tconst}?size=w342&v=2`} 342w`,
-    ].join(", ")
+    const listPosterSrc = hit.poster_path
+      ? getTmdbImageUrl(hit.poster_path, "w185")
+      : posters.medium && !posters.medium.startsWith("/poster/")
+      ? posters.medium
+      : undefined
+    const listPosterSrcSet = hit.poster_path
+      ? getTmdbImageSrcSet(hit.poster_path)
+      : undefined
     const listPosterSizes = "(max-width: 640px) 70px, 100px"
 
     return (
@@ -78,7 +97,7 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
         className="group flex gap-3 sm:gap-4 p-2.5 sm:p-3 rounded-2xl border border-border/70 bg-cinema-900/80 hover:bg-cinema-850 hover:border-primary/40 active:bg-cinema-800 shadow-md hover:shadow-xl transition-colors duration-150 cursor-pointer text-left select-none"
       >
         {/* Poster thumbnail */}
-        <div className="w-16 sm:w-24 flex-shrink-0">
+        <div className="relative w-16 sm:w-24 flex-shrink-0 group/poster">
           <MoviePoster
             src={listPosterSrc}
             srcSet={listPosterSrcSet}
@@ -87,6 +106,21 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
             priority={priority}
             className="rounded-xl shadow-md group-hover:scale-[1.02] transition-transform"
           />
+
+          {/* Quick Play Overlay Button */}
+          <button
+            type="button"
+            onClick={handleQuickPlay}
+            disabled={isTargetQuickPlaying}
+            title={isSeries ? "Быстрый просмотр следующей серии" : "Быстрый просмотр"}
+            className="absolute inset-0 m-auto w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-emerald-500/95 hover:bg-emerald-400 text-black shadow-lg shadow-black/60 flex items-center justify-center transition-all duration-200 opacity-90 sm:opacity-0 sm:group-hover/poster:opacity-100 hover:scale-110 active:scale-95 cursor-pointer z-10"
+          >
+            {isTargetQuickPlaying ? (
+              <Loader2 className="w-4 h-4 animate-spin text-black" />
+            ) : (
+              <Play className="w-4 h-4 fill-current ml-0.5" />
+            )}
+          </button>
         </div>
 
         {/* Info */}
@@ -158,12 +192,14 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
   }
 
   // Default Grid Card
-  const gridPosterSrc = posters.large || `/poster/${movie.tconst}?size=w342&v=2`
-  const gridPosterSrcSet = [
-    `${posters.medium || `/poster/${movie.tconst}?size=w185&v=2`} 185w`,
-    `${posters.large || `/poster/${movie.tconst}?size=w342&v=2`} 342w`,
-    `/poster/${movie.tconst}?size=w500&v=2 500w`,
-  ].join(", ")
+  const gridPosterSrc = hit.poster_path
+    ? getTmdbImageUrl(hit.poster_path, "w342")
+    : posters.large && !posters.large.startsWith("/poster/")
+    ? posters.large
+    : undefined
+  const gridPosterSrcSet = hit.poster_path
+    ? getTmdbImageSrcSet(hit.poster_path)
+    : undefined
   const gridPosterSizes = "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
 
   return (
@@ -202,6 +238,21 @@ export function MovieCard({ hit, viewMode = "grid", priority = false, onClick }:
             {movie.year}
           </div>
         ) : null}
+
+        {/* Quick Play Action Button Overlay */}
+        <button
+          type="button"
+          onClick={handleQuickPlay}
+          disabled={isTargetQuickPlaying}
+          title={isSeries ? "Быстрый просмотр следующей серии" : "Быстрый просмотр"}
+          className="absolute bottom-2.5 right-2.5 z-20 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-500/95 hover:bg-emerald-400 text-black shadow-xl shadow-black/70 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          {isTargetQuickPlaying ? (
+            <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin text-black" />
+          ) : (
+            <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current ml-0.5" />
+          )}
+        </button>
       </div>
 
       {/* Card Content */}

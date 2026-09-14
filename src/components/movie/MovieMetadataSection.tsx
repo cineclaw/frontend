@@ -263,7 +263,7 @@ export function MovieCast({
         </div>
 
         {/* Horizontal swipeable skeleton row */}
-        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 scroll-px-4 sm:scroll-px-6 no-scrollbar">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="flex flex-col items-center w-16 sm:w-20 shrink-0 space-y-1.5">
               <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-cinema-850/80 border border-border/40 animate-pulse" />
@@ -287,11 +287,13 @@ export function MovieCast({
         </span>
       </div>
 
-      {/* Horizontal swipeable row */}
-      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar overscroll-x-contain">
+      {/* Horizontal swipeable row (Edge-to-Edge) */}
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 no-scrollbar overscroll-x-contain">
         {cast.map((member) => (
           <CastAvatar key={member.id} member={member} />
         ))}
+        {/* Trailing spacer for comfortable right padding when scrolled to end */}
+        <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
       </div>
     </div>
   )
@@ -321,7 +323,7 @@ export function MovieTrailers({
         </div>
 
         {/* Horizontal swipeable skeleton cards */}
-        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
+        <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 scroll-px-4 sm:scroll-px-6 no-scrollbar">
           {[1, 2].map((i) => (
             <div
               key={i}
@@ -345,8 +347,8 @@ export function MovieTrailers({
         </span>
       </div>
 
-      {/* Horizontal swipeable cards */}
-      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar overscroll-x-contain">
+      {/* Horizontal swipeable cards (Edge-to-Edge) */}
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 no-scrollbar overscroll-x-contain">
         {videos.map((video) => {
           const thumbUrl = `https://img.youtube.com/vi/${video.key}/mqdefault.jpg`
           const isTrailer =
@@ -365,16 +367,16 @@ export function MovieTrailers({
                   src={thumbUrl}
                   alt={video.name}
                   loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-cover object-center group-hover:scale-104 transition-transform duration-300"
                 />
 
-                {/* Dark gradient vignette */}
+                {/* Dark Vignette Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
-                {/* Play Button Overlay */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white group-hover:bg-primary group-hover:border-primary group-hover:scale-110 transition-all shadow-lg">
-                    <Play className="h-4 w-4 fill-current ml-0.5" />
+                {/* Center Play Button Overlay */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-10 h-10 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-red-500 transition-all duration-200">
+                    <Play className="w-5 h-5 fill-current ml-0.5" />
                   </div>
                 </div>
 
@@ -398,6 +400,8 @@ export function MovieTrailers({
             </div>
           )
         })}
+        {/* Trailing spacer for comfortable right padding when scrolled to end */}
+        <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
       </div>
     </div>
   )

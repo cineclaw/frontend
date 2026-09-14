@@ -40,6 +40,8 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname.startsWith('/torrents') ||
     url.pathname.startsWith('/stream') ||
+    url.pathname.startsWith('/torr') ||
+    url.pathname.startsWith('/gst') ||
     url.pathname.startsWith('/api') ||
     url.pathname.startsWith('/search') ||
     url.pathname.startsWith('/poster') ||

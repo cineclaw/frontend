@@ -12,6 +12,7 @@ import {
   Play,
   ChevronDown,
   Layers,
+  Bookmark,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
@@ -26,18 +27,24 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MoviePoster } from "./MoviePoster"
 import { TorrentList } from "./TorrentList"
-import { QualityActionButtons } from "./QualityActionButtons"
 import { SeriesEpisodeBrowser } from "./SeriesEpisodeBrowser"
+import { useDefaultQuality, selectPreferredTorrent } from "@/lib/userSettings"
+import { getTmdbImageUrl } from "@/lib/tmdbImages"
 import {
   formatRating,
   formatRuntime,
   formatVotes,
   getTypeLabel,
+  cn,
 } from "@/lib/utils"
 import {
   useGetMountedStatusQuery,
+  useMountTorrentMutation,
   useUnmountTorrentMutation,
   useGetTorrentsQuery,
+  useCheckWatchlistQuery,
+  useAddToWatchlistMutation,
+  useRemoveFromWatchlistMutation,
 } from "@/api/torrentsApi"
 import { useGetMovieMetadataQuery } from "@/api/moviesApi"
 import { useIsMobile } from "@/hooks/useMediaQuery"
@@ -69,7 +76,11 @@ export function MovieModal() {
   const isSeries = activeMovie?.title_type === "tvSeries" || activeMovie?.title_type === "tvMiniSeries"
   const mainTitle = activeMovie?.title_ru || activeMovie?.title_primary || activeMovie?.title_orig || ""
 
-  const { data: torrents, isLoading: isLoadingTorrents } = useGetTorrentsQuery(
+  const {
+    currentData: torrents,
+    isLoading: isLoadingTorrents,
+    isFetching: isFetchingTorrents,
+  } = useGetTorrentsQuery(
     {
       q: mainTitle,
       imdb_id: activeMovie?.tconst || "",
@@ -93,6 +104,85 @@ export function MovieModal() {
   )
   const isMetadataBusy = isMetadataLoading || (isMetadataFetching && !metadata)
   const [unmountTorrent, { isLoading: isUnmounting }] = useUnmountTorrentMutation()
+
+  const { data: watchlistCheck } = useCheckWatchlistQuery(
+    activeMovie?.tconst ?? "",
+    { skip: !activeMovie?.tconst }
+  )
+  const [addToWatchlist, { isLoading: isAddingWatchlist }] = useAddToWatchlistMutation()
+  const [removeFromWatchlist, { isLoading: isRemovingWatchlist }] = useRemoveFromWatchlistMutation()
+  const isInWatchlist = Boolean(watchlistCheck?.in_watchlist)
+
+  const [defaultQuality] = useDefaultQuality()
+  const [mountTorrent, { isLoading: isMountingMovie }] = useMountTorrentMutation()
+
+  const handleWatchMovie = async () => {
+    if (!activeMovie) return
+
+    if (mountStatus?.mounted) {
+      dispatch(
+        openCinemaPlayer({
+          tconst: activeMovie.tconst,
+          title: mainTitle,
+          ruTitle: activeMovie.title_ru || undefined,
+        })
+      )
+      return
+    }
+
+    try {
+      if (torrents && torrents.length > 0) {
+        const bestTorrent = selectPreferredTorrent(torrents, defaultQuality, null, false)
+        if (bestTorrent && (bestTorrent.magnet || bestTorrent.id)) {
+          await mountTorrent({
+            tconst: activeMovie.tconst,
+            title: mainTitle,
+            ru_title: activeMovie.title_ru || undefined,
+            year: activeMovie.year ? activeMovie.year.toString() : undefined,
+            type: "movie",
+            magnet: bestTorrent.magnet,
+            tracker: bestTorrent.tracker || (bestTorrent.trackers && bestTorrent.trackers[0]),
+            torrent_id: bestTorrent.id,
+            details_url: bestTorrent.details_url,
+            mode: "add_version",
+            version_name: defaultQuality.toUpperCase(),
+            resolution: bestTorrent.resolution,
+          }).unwrap()
+        }
+      }
+    } catch (err) {
+      console.warn("Auto mount movie error:", err)
+    }
+
+    dispatch(
+      openCinemaPlayer({
+        tconst: activeMovie.tconst,
+        title: mainTitle,
+        ruTitle: activeMovie.title_ru || undefined,
+      })
+    )
+  }
+
+  const handleToggleWatchlist = async () => {
+    if (!activeMovie) return
+    try {
+      if (isInWatchlist) {
+        await removeFromWatchlist(activeMovie.tconst).unwrap()
+      } else {
+        await addToWatchlist({
+          imdb_id: activeMovie.tconst,
+          media_type: isSeries ? "tv" : "movie",
+          title: mainTitle,
+          original_title: activeMovie.title_orig,
+          year: activeMovie.year || undefined,
+          rating: activeMovie.rating || undefined,
+          poster_path: metadata?.poster_path || undefined,
+        }).unwrap()
+      }
+    } catch (err) {
+      console.error("Failed to toggle watchlist:", err)
+    }
+  }
 
   // Lock background body scroll and handle browser back button / gestures on mobile
   useEffect(() => {
@@ -176,7 +266,7 @@ export function MovieModal() {
   }
 
   const runtimeFormatted = formatRuntime(activeMovie.runtime_minutes)
-  const posterUrl = `/poster/${activeMovie.tconst}?size=w500`
+  const posterUrl = getTmdbImageUrl(metadata?.poster_path, "w500")
   const imdbUrl = `https://www.imdb.com/title/${activeMovie.tconst}/`
 
   // -------------------------------------------------------------
@@ -408,27 +498,73 @@ export function MovieModal() {
                 </div>
               )}
 
-              {/* Primary Action Buttons (Quality & Watch / Add) or Series Browser */}
+              {/* Primary Action Buttons (Смотреть / Буду смотреть or Series Browser) */}
               <div className="w-full min-w-0 pt-2">
                 {isSeries ? (
-                  <SeriesEpisodeBrowser
-                    tconst={activeMovie.tconst}
-                    title={mainTitle}
-                    ruTitle={activeMovie.title_ru || undefined}
-                    year={activeMovie.year}
-                    torrents={torrents}
-                    isLoadingTorrents={isLoadingTorrents}
-                  />
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleToggleWatchlist}
+                        disabled={isAddingWatchlist || isRemovingWatchlist}
+                        className={cn(
+                          "h-8 px-3 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
+                          isInWatchlist
+                            ? "bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25"
+                            : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                        )}
+                      >
+                        <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
+                        <span>{isInWatchlist ? "В списке «Буду смотреть»" : "Буду смотреть"}</span>
+                      </Button>
+                    </div>
+                    <SeriesEpisodeBrowser
+                      tconst={activeMovie.tconst}
+                      title={mainTitle}
+                      ruTitle={activeMovie.title_ru || undefined}
+                      year={activeMovie.year}
+                      torrents={torrents}
+                      isLoadingTorrents={isLoadingTorrents || isFetchingTorrents}
+                    />
+                  </div>
                 ) : (
-                  <QualityActionButtons
-                    tconst={activeMovie.tconst}
-                    title={mainTitle}
-                    ruTitle={activeMovie.title_ru || undefined}
-                    year={activeMovie.year}
-                    isSeries={false}
-                    torrents={torrents}
-                    isLoadingTorrents={isLoadingTorrents}
-                  />
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleWatchMovie}
+                      disabled={isMountingMovie}
+                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-98 transition-all cursor-pointer disabled:opacity-60"
+                    >
+                      {isMountingMovie ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-black" />
+                          <span>Запуск...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                          <span>Смотреть ({defaultQuality.toUpperCase()})</span>
+                        </>
+                      )}
+                    </button>
+
+                    <Button
+                      variant="outline"
+                      size="default"
+                      onClick={handleToggleWatchlist}
+                      disabled={isAddingWatchlist || isRemovingWatchlist}
+                      className={cn(
+                        "h-11 px-3.5 rounded-xl border text-xs font-semibold gap-1.5 transition-all shadow-sm shrink-0",
+                        isInWatchlist
+                          ? "bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25"
+                          : "bg-cinema-850/90 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                      )}
+                    >
+                      <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
+                      <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -719,10 +855,22 @@ export function MovieModal() {
               </div>
 
               {/* Actions */}
-              <div className="pt-3 border-t border-border/60 flex items-center justify-between gap-3">
-                <span className="text-[11px] font-mono text-zinc-500">
-                  ID: {activeMovie.tconst}
-                </span>
+              <div className="pt-3 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleWatchlist}
+                  disabled={isAddingWatchlist || isRemovingWatchlist}
+                  className={cn(
+                    "h-8 px-3 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
+                    isInWatchlist
+                      ? "bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25"
+                      : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                  )}
+                >
+                  <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
+                  <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
+                </Button>
 
                 <a
                   href={imdbUrl}
@@ -731,7 +879,7 @@ export function MovieModal() {
                   className="inline-flex"
                 >
                   <Button variant="default" size="sm" className="gap-2 text-xs">
-                    <span>Открыть на IMDb</span>
+                    <span>IMDb</span>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </a>
@@ -739,7 +887,7 @@ export function MovieModal() {
             </div>
           </div>
 
-          {/* Primary Action Buttons (Quality & Watch / Add) or Series Browser */}
+          {/* Primary Action Buttons (Смотреть / Буду смотреть or Series Browser) */}
           <div className="w-full min-w-0 pt-4 border-t border-border/50">
             {isSeries ? (
               <SeriesEpisodeBrowser
@@ -748,18 +896,29 @@ export function MovieModal() {
                 ruTitle={activeMovie.title_ru || undefined}
                 year={activeMovie.year}
                 torrents={torrents}
-                isLoadingTorrents={isLoadingTorrents}
+                isLoadingTorrents={isLoadingTorrents || isFetchingTorrents}
               />
             ) : (
-              <QualityActionButtons
-                tconst={activeMovie.tconst}
-                title={mainTitle}
-                ruTitle={activeMovie.title_ru || undefined}
-                year={activeMovie.year}
-                isSeries={false}
-                torrents={torrents}
-                isLoadingTorrents={isLoadingTorrents}
-              />
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleWatchMovie}
+                  disabled={isMountingMovie}
+                  className="flex-1 py-3 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-extrabold text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-500/25 active:scale-98 transition-all cursor-pointer disabled:opacity-60"
+                >
+                  {isMountingMovie ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin text-black" />
+                      <span>Запуск...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5 fill-current ml-0.5" />
+                      <span>Смотреть ({defaultQuality.toUpperCase()})</span>
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
 

@@ -389,16 +389,16 @@ export function buildTorrentQualityOptions(
   }
 
   // Sort by Quality Tier descending (4K -> 1080p -> 720p -> SD),
-  // then by Bitrate descending (if difference > 0.5 Mbps),
-  // then by Seeds descending
+  // then by Seeds descending (strictly prioritized inside each quality group),
+  // then by Bitrate descending (as tiebreaker)
   return options.sort((a, b) => {
     const rankDiff = tierMap[b.tier].rank - tierMap[a.tier].rank
     if (rankDiff !== 0) return rankDiff
 
-    if (Math.abs(b.bitrateMbps - a.bitrateMbps) > 0.5) {
-      return b.bitrateMbps - a.bitrateMbps
+    if (b.seeds !== a.seeds) {
+      return b.seeds - a.seeds
     }
-    return b.seeds - a.seeds
+    return b.bitrateMbps - a.bitrateMbps
   })
 }
 

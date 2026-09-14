@@ -49,7 +49,7 @@ export interface TorrentsQueryParams {
 export const torrentsApi = createApi({
   reducerPath: 'torrentsApi',
   baseQuery: baseQueryWithAuth,
-  tagTypes: ['Torrents', 'MountStatus'],
+  tagTypes: ['Torrents', 'MountStatus', 'Watchlist'],
   endpoints: (builder) => ({
     getTorrents: builder.query<TorrentResult[], TorrentsQueryParams>({
       query: (params) => {
@@ -59,7 +59,9 @@ export const torrentsApi = createApi({
         if (params.type) queryParams.type = params.type
         if (params.refresh_cache) queryParams.refresh_cache = 'true'
         if (params.limit) queryParams.limit = params.limit.toString()
-
+        if (params.season !== undefined && params.season !== null && params.season > 0) {
+          queryParams.season = params.season.toString()
+        }
 
         return {
           url: 'torrents',
@@ -78,7 +80,11 @@ export const torrentsApi = createApi({
         }
         if (params.q) queryParams.q = params.q
         if (params.imdb_id) queryParams.imdb_id = params.imdb_id
+        if (params.type) queryParams.type = params.type
         if (params.limit) queryParams.limit = params.limit.toString()
+        if (params.season !== undefined && params.season !== null && params.season > 0) {
+          queryParams.season = params.season.toString()
+        }
 
         return {
           url: 'torrents',
@@ -119,6 +125,7 @@ export const torrentsApi = createApi({
       }),
       invalidatesTags: (_result, _error, arg) => [
         { type: 'MountStatus', id: arg.tconst },
+        { type: 'MountStatus', id: `player-${arg.tconst}` },
       ],
     }),
     unmountTorrent: builder.mutation<UnmountTorrentResponse, UnmountTorrentRequest>({
@@ -129,6 +136,7 @@ export const torrentsApi = createApi({
       }),
       invalidatesTags: (_result, _error, arg) => [
         { type: 'MountStatus', id: arg.tconst || 'all' },
+        { type: 'MountStatus', id: `player-${arg.tconst || 'all'}` },
       ],
     }),
     getTrackerHotlist: builder.query<FeedShelf, { type?: string; quality?: string; page?: number; limit?: number }>({
@@ -187,8 +195,123 @@ export const torrentsApi = createApi({
       providesTags: () => [{ type: 'MountStatus', id: 'ResumeList' }],
       keepUnusedDataFor: 30,
     }),
+    deleteResumeItem: builder.mutation<PlaybackActionResponse, DeleteResumeRequest>({
+      query: (body) => ({
+        url: 'api/stream/resume',
+        method: 'DELETE',
+        body,
+      }),
+      invalidatesTags: () => [{ type: 'MountStatus', id: 'ResumeList' }],
+    }),
+    getWatchlist: builder.query<WatchlistItem[], void>({
+      query: () => 'api/watchlist',
+      providesTags: () => [{ type: 'Watchlist', id: 'LIST' }],
+      keepUnusedDataFor: 30,
+    }),
+    addToWatchlist: builder.mutation<{ success: boolean }, Partial<WatchlistItem>>({
+      query: (body) => ({
+        url: 'api/watchlist',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, arg) => [
+        { type: 'Watchlist', id: 'LIST' },
+        { type: 'Watchlist', id: arg.imdb_id },
+      ],
+    }),
+    removeFromWatchlist: builder.mutation<{ success: boolean }, string>({
+      query: (imdbId) => ({
+        url: `api/watchlist?imdb_id=${encodeURIComponent(imdbId)}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_res, _err, arg) => [
+        { type: 'Watchlist', id: 'LIST' },
+        { type: 'Watchlist', id: arg },
+      ],
+    }),
+    checkWatchlist: builder.query<{ in_watchlist: boolean }, string>({
+      query: (imdbId) => `api/watchlist/check?imdb_id=${encodeURIComponent(imdbId)}`,
+      providesTags: (_res, _err, id) => [{ type: 'Watchlist', id }],
+    }),
+    getTranscodeProfiles: builder.query<TranscodeProfile[], void>({
+      query: () => 'api/stream/transcode/profiles',
+      keepUnusedDataFor: 3600,
+    }),
+    stopTranscoding: builder.mutation<{ success: boolean }, { session?: string; hash?: string }>({
+      query: (body) => ({
+        url: 'api/stream/transcode/stop',
+        method: 'POST',
+        body,
+      }),
+    }),
+    setAudioPreference: builder.mutation<{ success: boolean }, { imdb_id: string; audio_title: string; audio_index: number }>({
+      query: (body) => ({
+        url: 'api/playback/audio',
+        method: 'POST',
+        body,
+      }),
+    }),
+    getSeriesProgress: builder.query<SeriesProgressResponse, string>({
+      query: (imdbId) => `api/playback/series-progress?imdb_id=${encodeURIComponent(imdbId)}`,
+      providesTags: (_res, _err, id) => [
+        { type: 'MountStatus', id: `series-progress-${id}` },
+        { type: 'MountStatus', id: 'ResumeList' },
+      ],
+      keepUnusedDataFor: 60,
+    }),
+    markWatched: builder.mutation<{ success: boolean }, MarkWatchedRequest>({
+      query: (body) => ({
+        url: 'api/playback/mark-watched',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, arg) => [
+        { type: 'MountStatus', id: `series-progress-${arg.imdb_id}` },
+        { type: 'MountStatus', id: 'ResumeList' },
+        { type: 'MountStatus', id: 'LIST' },
+      ],
+    }),
   }),
 })
+
+export interface SeasonProgressSummary {
+  season_number: number
+  total_episodes: number
+  watched_episodes: number
+  is_completed: boolean
+}
+
+export interface EpisodeProgressStatus {
+  season_number: number
+  episode_number: number
+  position_seconds: number
+  duration_seconds: number
+  playback_percent: number
+  is_completed: boolean
+}
+
+export interface SeriesProgressResponse {
+  imdb_id: string
+  total_episodes: number
+  total_watched: number
+  is_completed: boolean
+  has_unwatched_prior: boolean
+  latest_watched_season?: number
+  latest_watched_episode?: number
+  seasons: Record<string, SeasonProgressSummary>
+  episodes: Record<string, EpisodeProgressStatus>
+}
+
+export interface MarkWatchedRequest {
+  imdb_id: string
+  mode: 'episode' | 'season' | 'up_to' | 'series'
+  title?: string
+  season?: number
+  episode?: number
+  up_to_season?: number
+  up_to_episode?: number
+  completed?: boolean
+}
 
 export interface MountedStatusResponse {
   mounted: boolean
@@ -231,6 +354,8 @@ export interface MountTorrentRequest {
   version_name?: string
   resolution?: string
   folder_name?: string
+  position_seconds?: number
+  episode?: number
 }
 
 export interface MountTorrentResponse {
@@ -269,6 +394,18 @@ export interface EpisodeInfo {
   is_played: boolean
 }
 
+export interface TranscodeProfile {
+  id: string
+  label: string
+  description: string
+  max_height: number
+  bitrate_kbps: number
+  maxrate_kbps: number
+  bufsize_kbps: number
+  audio_kbps: number
+  is_direct: boolean
+}
+
 export interface PlayerInfoResponse {
   success: boolean
   error?: string
@@ -280,6 +417,7 @@ export interface PlayerInfoResponse {
   resume_seconds: number
   is_played: boolean
   stream_url?: string
+  direct_stream_url?: string
   media_source_id?: string
   audio_tracks?: AudioTrack[]
   subtitles?: SubtitleTrack[]
@@ -292,6 +430,8 @@ export interface PlayerInfoResponse {
   height?: number
   bitrate?: number
   video_codec?: string
+  target_file_idx?: number
+  transcode_profiles?: TranscodeProfile[]
 }
 
 export interface PlaybackStartRequest {
@@ -341,6 +481,27 @@ export interface ResumeItem {
   is_next_up?: boolean
 }
 
+export interface DeleteResumeRequest {
+  item_id: string
+  tconst?: string
+  season?: number
+  episode?: number
+  is_next_up?: boolean
+  all?: boolean
+}
+
+export interface WatchlistItem {
+  imdb_id: string
+  media_type: 'movie' | 'tv' | string
+  title: string
+  original_title?: string
+  year?: number
+  rating?: number
+  poster_path?: string
+  backdrop_path?: string
+  added_at: string
+}
+
 export const {
   useGetTorrentsQuery,
   useLazyGetTorrentsQuery,
@@ -357,6 +518,18 @@ export const {
   useReportPlayerStopMutation,
   useGetResumeItemsQuery,
   useLazyGetResumeItemsQuery,
+  useDeleteResumeItemMutation,
+  useGetWatchlistQuery,
+  useAddToWatchlistMutation,
+  useRemoveFromWatchlistMutation,
+  useCheckWatchlistQuery,
+  useGetTranscodeProfilesQuery,
+  useStopTranscodingMutation,
+  useSetAudioPreferenceMutation,
+  useGetSeriesProgressQuery,
+  useMarkWatchedMutation,
 } = torrentsApi
+
+
 
 

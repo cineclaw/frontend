@@ -7,6 +7,7 @@ export interface ActiveCinemaPlayer {
   ruTitle?: string
   initialSeason?: number
   initialEpisode?: number
+  autoResume?: boolean
 }
 
 interface SearchState {

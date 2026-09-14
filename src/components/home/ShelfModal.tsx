@@ -11,7 +11,9 @@ import {
   SlidersHorizontal,
   Loader2,
   ChevronDown,
+  Play,
 } from "lucide-react"
+import { useQuickPlay } from "@/hooks/useQuickPlay"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
 import { setSelectedShelfId, setSelectedMovie, setSelectedMediaType } from "@/store/searchSlice"
@@ -26,6 +28,7 @@ import { useIsMobile } from "@/hooks/useMediaQuery"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { formatRating } from "@/lib/utils"
+import { getTmdbImageUrl } from "@/lib/tmdbImages"
 import { CatalogFilterBar, type FilterState } from "@/components/catalog/CatalogFilterBar"
 import type { FeedItem, MovieDoc } from "@/api/types"
 
@@ -39,6 +42,7 @@ const SHELF_ICONS: Record<string, React.ElementType> = {
 }
 
 const DEFAULT_TITLES: Record<string, { title: string; icon: string }> = {
+  tracker_fresh: { title: "Новинки на трекерах", icon: "flame" },
   tracker_hotlist: { title: "Популярно на трекерах", icon: "zap" },
   uhd_4k: { title: "4K UHD Кинозал", icon: "star" },
   anime_hub: { title: "Аниме & Мультипликация", icon: "tv" },
@@ -76,6 +80,7 @@ export function ShelfModal() {
   const [resolvingId, setResolvingId] = useState<number | null>(null)
   const [filters, setFilters] = useState<FilterState>({})
   const [qualityFilter, setQualityFilter] = useState<string>("")
+  const { quickPlay, isQuickPlaying } = useQuickPlay()
 
   // Current shelf metadata (title, icon)
   const shelfMeta = useMemo(() => {
@@ -99,6 +104,14 @@ export function ShelfModal() {
       currentFilters: FilterState,
       quality?: string
     ) => {
+      if (shelfId === "tracker_fresh") {
+        const freshType = mediaType === "tv" ? "new_tv" : "new_movie"
+        const res = await triggerGetHotlist({
+          type: freshType,
+          page: targetPage,
+        }).unwrap()
+        return res
+      }
       if (shelfId === "tracker_hotlist") {
         const res = await triggerGetHotlist({
           type: mediaType,
@@ -379,19 +392,23 @@ export function ShelfModal() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
         {items.map((item, index) => {
           const isResolving = resolvingId === item.id
-          const posterUrl = item.poster_path
-            ? item.poster_path.startsWith("/poster/")
-              ? item.poster_path
-              : `https://image.tmdb.org/t/p/w342${item.poster_path}`
-            : null
+          const posterUrl = getTmdbImageUrl(item.poster_path, "w342") || null
 
           return (
-            <button
+            <div
               key={`${item.id}-${item.tconst || index}`}
-              type="button"
-              onClick={() => handleSelectMovie(item)}
-              disabled={isResolving}
-              className="group flex flex-col text-left cursor-pointer active:scale-97 transition-all duration-200 select-none disabled:opacity-60 disabled:cursor-not-allowed"
+              role="button"
+              tabIndex={0}
+              onClick={() => !isResolving && handleSelectMovie(item)}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !isResolving) {
+                  e.preventDefault()
+                  handleSelectMovie(item)
+                }
+              }}
+              className={`group flex flex-col text-left cursor-pointer active:scale-97 transition-all duration-200 select-none ${
+                isResolving ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               {/* Poster Thumbnail */}
               <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-cinema-850 border border-border/80 group-hover:border-primary/60 group-hover:shadow-lg transition-all">
@@ -443,6 +460,31 @@ export function ShelfModal() {
                     </span>
                   </div>
                 )}
+
+                {/* Quick Play Action Button Overlay */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    quickPlay({
+                      tconst: item.tconst,
+                      tmdbId: item.id,
+                      title: item.title || item.original_title || "",
+                      ruTitle: item.title,
+                      isSeries: item.media_type === "tv",
+                      year: item.year,
+                    })
+                  }}
+                  disabled={isQuickPlaying(item.tconst || item.id)}
+                  title={item.media_type === "tv" ? "Быстрый просмотр следующей серии" : "Быстрый просмотр"}
+                  className="absolute bottom-2 right-2 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-emerald-500/95 hover:bg-emerald-400 text-black shadow-lg shadow-black/70 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+                >
+                  {isQuickPlaying(item.tconst || item.id) ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                  )}
+                </button>
               </div>
 
               {/* Movie Info */}
@@ -466,7 +508,7 @@ export function ShelfModal() {
                   ) : null}
                 </div>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>

@@ -6,7 +6,9 @@ import {
   Star,
   Loader2,
   ChevronRight,
+  Play,
 } from "lucide-react"
+import { useQuickPlay } from "@/hooks/useQuickPlay"
 import { useAppDispatch, useAppSelector } from "@/store/store"
 import { setSelectedMovie, setSelectedShelfId } from "@/store/searchSlice"
 import {
@@ -16,6 +18,8 @@ import {
 import { formatRating } from "@/lib/utils"
 import { CatalogTilesGrid } from "./CatalogTilesGrid"
 import { ContinueWatchingShelf } from "./ContinueWatchingShelf"
+import { WatchlistShelf } from "./WatchlistShelf"
+import { getTmdbImageUrl } from "@/lib/tmdbImages"
 import type { FeedItem, MovieDoc } from "@/api/types"
 
 export function HomeShelves() {
@@ -29,6 +33,7 @@ export function HomeShelves() {
   })
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
   const [resolvingId, setResolvingId] = useState<number | null>(null)
+  const { quickPlay, isQuickPlaying } = useQuickPlay()
 
   const handleSelectMovie = async (item: FeedItem) => {
     if (item.tconst) {
@@ -86,14 +91,17 @@ export function HomeShelves() {
   ) || shelves?.[0]
 
   return (
-    <div className="space-y-6 pt-1 pb-8 w-full max-w-4xl mx-auto text-left">
+    <div className="space-y-7 pt-1 pb-8 w-full text-left">
       {/* Continue Watching Shelf (TorrServer SQLite Resume Integration) */}
       <ContinueWatchingShelf />
 
+      {/* Watchlist Shelf ("Буду смотреть") */}
+      <WatchlistShelf />
+
       {/* Featured Preview Shelf (Single Strip) */}
       {featuredShelf && featuredShelf.items && featuredShelf.items.length > 0 && (
-        <section className="space-y-2.5 px-1 sm:px-2">
-          <div className="flex items-center justify-between px-0.5">
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between px-4 sm:px-6">
             <div className="flex items-center gap-2">
               <div className="p-1 rounded-lg bg-cinema-850 border border-border/70 text-primary">
                 {selectedMediaType === "tv" ? (
@@ -116,23 +124,27 @@ export function HomeShelves() {
             </button>
           </div>
 
-          {/* Horizontal Swipeable Preview Strip */}
-          <div className="flex gap-3 overflow-x-auto no-scrollbar overscroll-x-contain pb-2 -mx-3 px-3 sm:-mx-6 sm:px-6">
+          {/* Horizontal Swipeable Preview Strip (Edge-to-Edge) */}
+          <div className="flex gap-3 overflow-x-auto no-scrollbar overscroll-x-contain pb-2 pl-4 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 snap-x snap-mandatory">
             {featuredShelf.items.slice(0, 10).map((item) => {
               const isResolving = resolvingId === item.id
-              const posterUrl = item.poster_path
-                ? item.poster_path.startsWith("/poster/")
-                  ? item.poster_path
-                  : `https://image.tmdb.org/t/p/w342${item.poster_path}`
-                : null
+              const posterUrl = getTmdbImageUrl(item.poster_path, "w342") || null
 
               return (
-                <button
+                <div
                   key={`${featuredShelf.id}-${item.id}`}
-                  type="button"
-                  onClick={() => handleSelectMovie(item)}
-                  disabled={isResolving}
-                  className="group w-28 sm:w-36 flex-shrink-0 flex flex-col text-left cursor-pointer active:scale-97 transition-all duration-200 select-none disabled:opacity-60 disabled:cursor-not-allowed"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => !isResolving && handleSelectMovie(item)}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !isResolving) {
+                      e.preventDefault()
+                      handleSelectMovie(item)
+                    }
+                  }}
+                  className={`group w-28 sm:w-36 flex-shrink-0 flex flex-col text-left cursor-pointer active:scale-97 transition-all duration-200 select-none ${
+                    isResolving ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
                   <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-cinema-850 border border-border/80 group-hover:border-primary/60 group-hover:shadow-lg transition-all">
                     {posterUrl ? (
@@ -166,6 +178,31 @@ export function HomeShelves() {
                         </span>
                       </div>
                     )}
+
+                    {/* Quick Play Overlay Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        quickPlay({
+                          tconst: item.tconst,
+                          tmdbId: item.id,
+                          title: item.title || item.original_title || "",
+                          ruTitle: item.title,
+                          isSeries: item.media_type === "tv",
+                          year: item.year,
+                        })
+                      }}
+                      disabled={isQuickPlaying(item.tconst || item.id)}
+                      title={item.media_type === "tv" ? "Быстрый просмотр следующей серии" : "Быстрый просмотр"}
+                      className="absolute bottom-2 right-2 z-20 w-8 h-8 rounded-full bg-emerald-500/95 hover:bg-emerald-400 text-black shadow-lg shadow-black/70 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer opacity-90 sm:opacity-0 sm:group-hover:opacity-100"
+                    >
+                      {isQuickPlaying(item.tconst || item.id) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      )}
+                    </button>
                   </div>
 
                   <div className="pt-1.5 px-0.5 space-y-0.5">
@@ -176,16 +213,18 @@ export function HomeShelves() {
                       <span>{item.year || "—"}</span>
                     </div>
                   </div>
-                </button>
+                </div>
               )
             })}
+            {/* Trailing spacer for comfortable right padding when scrolled to end */}
+            <div className="shrink-0 w-4 sm:w-6 pointer-events-none" aria-hidden="true" />
           </div>
         </section>
       )}
 
       {/* Catalog Hub Launcher Tiles */}
       <section className="space-y-3">
-        <div className="px-1 sm:px-2 flex items-center justify-between">
+        <div className="px-4 sm:px-6 flex items-center justify-between max-w-4xl mx-auto">
           <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
             Каталоги и коллекции
           </h2>

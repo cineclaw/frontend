@@ -56,7 +56,7 @@ export function CatalogFilterBar({ mediaType, filters, onChange }: CatalogFilter
   return (
     <div className="space-y-2.5 py-2 w-full border-b border-white/5 mb-4">
       {/* Countries scroll row */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6">
         <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60 shrink-0 mr-1">
           Страна:
         </span>
@@ -77,10 +77,11 @@ export function CatalogFilterBar({ mediaType, filters, onChange }: CatalogFilter
             </button>
           )
         })}
+        <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
       </div>
 
       {/* Genres scroll row */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6">
         <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60 shrink-0 mr-1">
           Жанр:
         </span>
@@ -101,10 +102,11 @@ export function CatalogFilterBar({ mediaType, filters, onChange }: CatalogFilter
             </button>
           )
         })}
+        <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
       </div>
 
       {/* Years & Ratings row */}
-      <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+      <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6">
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60 shrink-0 mr-1">
             Год:
@@ -153,6 +155,7 @@ export function CatalogFilterBar({ mediaType, filters, onChange }: CatalogFilter
             )
           })}
         </div>
+        <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
       </div>
     </div>
   )

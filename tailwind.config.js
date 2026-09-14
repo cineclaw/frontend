@@ -61,6 +61,14 @@ export default {
           "0%": { opacity: 0, transform: "translateY(8px)" },
           "100%": { opacity: 1, transform: "translateY(0)" },
         },
+        "slide-up": {
+          "0%": { opacity: 0, transform: "translateY(100%)" },
+          "100%": { opacity: 1, transform: "translateY(0)" },
+        },
+        "slide-left": {
+          "0%": { opacity: 0, transform: "translateX(100%)" },
+          "100%": { opacity: 1, transform: "translateX(0)" },
+        },
         "pulse-glow": {
           "0%, 100%": { opacity: 0.6 },
           "50%": { opacity: 1 },
@@ -68,6 +76,8 @@ export default {
       },
       animation: {
         "fade-in": "fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-up": "slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-left": "slide-left 0.28s cubic-bezier(0.16, 1, 0.3, 1)",
         "pulse-glow": "pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
       },
     },

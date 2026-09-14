@@ -326,7 +326,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
             <Tv className="h-3.5 w-3.5 text-primary" />
             <span>Сезоны:</span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-1 -mx-1 px-1">
+          <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-1 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6">
             <button
               onClick={() => setSelectedSeason(null)}
               className={`px-3 py-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
@@ -375,6 +375,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
                 </button>
               )
             })}
+            <div className="shrink-0 w-3 sm:w-4 pointer-events-none" aria-hidden="true" />
           </div>
         </div>
       )}
@@ -403,7 +404,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
 
       {/* Resolution Filter Tabs */}
       {!isLoading && items.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-2.5 text-xs overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 flex-nowrap sm:flex-wrap">
+        <div className="flex items-center gap-1.5 mb-2.5 text-xs overflow-x-auto no-scrollbar py-0.5 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 flex-nowrap sm:flex-wrap">
           <span className="text-[11px] font-semibold text-zinc-400 mr-1 flex items-center gap-1 shrink-0 whitespace-nowrap">
             <Monitor className="h-3 w-3 text-primary" />
             Качество:
@@ -457,12 +458,13 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
               <span className="text-[10px] opacity-80 font-mono">({resCounts.lq})</span>
             </button>
           )}
+          <div className="shrink-0 w-3 sm:w-4 pointer-events-none sm:hidden" aria-hidden="true" />
         </div>
       )}
 
       {/* Tracker Filter Tabs */}
       {!isLoading && items.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-3 text-xs overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 flex-nowrap sm:flex-wrap">
+        <div className="flex items-center gap-1.5 mb-3 text-xs overflow-x-auto no-scrollbar py-0.5 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 flex-nowrap sm:flex-wrap">
           <span className="text-[11px] font-semibold text-zinc-400 mr-1 shrink-0 whitespace-nowrap">
             Трекер:
           </span>
@@ -512,6 +514,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
               RuTor ({trackerCounts.rutor})
             </button>
           )}
+          <div className="shrink-0 w-3 sm:w-4 pointer-events-none sm:hidden" aria-hidden="true" />
         </div>
       )}
 

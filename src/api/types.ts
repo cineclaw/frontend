@@ -25,6 +25,8 @@ export interface SearchHit {
   score: number
   bm25_score: number
   popularity_multiplier: number
+  poster_path?: string
+  backdrop_path?: string
   poster_url: string
   posters: PosterUrls
 }
@@ -73,6 +75,8 @@ export interface SeriesSeasonItem {
   episode_count: number
   air_date?: string | null
   poster_path?: string | null
+  overview?: string | null
+  vote_average?: number | null
 }
 
 export interface SeriesSeasonsResponse {
@@ -80,6 +84,15 @@ export interface SeriesSeasonsResponse {
   tmdb_id: number
   name: string
   original_name: string
+  overview?: string | null
+  premiered?: string | null
+  rating?: number | null
+  genres?: string[]
+  studio?: string | null
+  status?: string | null
+  poster_path?: string | null
+  backdrop_path?: string | null
+  logo_path?: string | null
   number_of_seasons: number
   number_of_episodes: number
   seasons: SeriesSeasonItem[]
@@ -92,6 +105,10 @@ export interface SeriesEpisodeItem {
   overview: string
   air_date?: string
   still_path?: string
+  vote_average?: number | null
+  vote_count?: number | null
+  runtime?: number | null
+  episode_type?: string | null
 }
 
 export interface CastMember {
@@ -136,6 +153,8 @@ export interface MovieMetadataResponse {
   cast: CastMember[]
   crew: CrewMember[]
   videos: VideoItem[]
+  runtime_minutes?: number | null
+  backdrops?: string[]
 }
 
 export interface PersonCreditItem {

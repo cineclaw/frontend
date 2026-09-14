@@ -58,7 +58,7 @@ export function QuickChips() {
   ]
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar justify-start sm:justify-center py-2">
+    <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar justify-start sm:justify-center py-1.5 -mx-3 pl-3 pr-0 sm:mx-0 sm:px-0 scroll-pl-3">
       {chips.map((chip) => {
         const Icon = chip.icon
         return (
@@ -75,6 +75,8 @@ export function QuickChips() {
           </Button>
         )
       })}
+      {/* Trailing spacer for comfortable right padding when scrolled to end on mobile */}
+      <div className="shrink-0 w-3 sm:hidden pointer-events-none" aria-hidden="true" />
     </div>
   )
 }
