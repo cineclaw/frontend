@@ -27,6 +27,9 @@ import {
   ExternalLink,
   Copy,
   Cpu,
+  WifiOff,
+  SignalZero,
+  RefreshCw,
 } from 'lucide-react'
 import {
   useGetPlayerInfoQuery,
@@ -46,6 +49,12 @@ import {
   type TorrentResult,
 } from '@/api/torrentsApi'
 import { useAppDispatch } from '@/store/store'
+import {
+  getLocalPlayback,
+  saveLocalPlayback,
+  resolveEffectiveResumeTime,
+} from '@/lib/playbackProgress'
+import { replaceRoute } from '@/lib/router'
 
 const defaultTranscodeProfiles: TranscodeProfile[] = [
   {
@@ -226,6 +235,20 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [setAudioPreference] = useSetAudioPreferenceMutation()
   const dispatch = useAppDispatch()
 
+  const lastSavedLocalTimeRef = useRef<number>(0)
+
+  // Keep URL updated with active season & episode
+  useEffect(() => {
+    if (!tconst) return
+    replaceRoute({
+      type: 'watch',
+      tconst,
+      season: currentSeason,
+      episode: currentEpisode,
+      autoResume: true,
+    })
+  }, [tconst, currentSeason, currentEpisode])
+
   // Player DOM and State
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -261,6 +284,17 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   const [qualityToast, setQualityToast] = useState<string | null>(null)
   const [nextEpisodePrompt, setNextEpisodePrompt] = useState<boolean>(false)
   const [nextCountdown, setNextCountdown] = useState<number>(10)
+
+  // Network Auto-Recovery & Offline States
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
+  const [reconnectAttempt, setReconnectAttempt] = useState<number>(0)
+  const [isConnectionExhausted, setIsConnectionExhausted] = useState<boolean>(false)
+  const [isNetworkOffline, setIsNetworkOffline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? !navigator.onLine : false
+  })
+  const [reconnectNonce, setReconnectNonce] = useState<number>(0)
+  const [showLowBandwidthPrompt, setShowLowBandwidthPrompt] = useState<boolean>(false)
+  const recentStallsRef = useRef<number[]>([])
 
   const closeAllMenus = useCallback(() => {
     setShowQualityMenu(false)
@@ -482,12 +516,12 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       return
     }
 
-    // If waiting/buffering/syncing, start 30s countdown
-    if ((isBuffering || isPreparingStream) && !showStallPrompt) {
+    // If waiting/buffering/syncing and not in exhausted retry state, start 15s countdown
+    if ((isBuffering || isPreparingStream) && !showStallPrompt && !isConnectionExhausted) {
       if (!stallTimerRef.current) {
         stallTimerRef.current = setTimeout(() => {
           setShowStallPrompt(true)
-        }, 30000)
+        }, 15000)
       }
     }
 
@@ -497,7 +531,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         stallTimerRef.current = null
       }
     }
-  }, [isPlaying, isBuffering, isPreparingStream, showStallPrompt])
+  }, [isPlaying, isBuffering, isPreparingStream, showStallPrompt, isConnectionExhausted])
 
   const handleSelectAlternateTorrent = async (torrent: TorrentResult) => {
     setIsMountingAlternate(true)
@@ -630,13 +664,26 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       ? `${tconst}_s${currentSeason}_e${currentEpisode}`
       : `${tconst}_s0_e0`
     const itemId = cur.id || playerInfo?.item_id || fallbackItemId
+    const effDuration = duration || playerInfo?.duration_seconds || 0
+
+    saveLocalPlayback({
+      tconst,
+      season: currentSeason,
+      episode: currentEpisode,
+      itemId,
+      positionSeconds: liveTime,
+      durationSeconds: effDuration,
+      isPlayed: isFinished,
+      title: title || playerInfo?.title,
+      ruTitle: ruTitle || playerInfo?.ru_title,
+    })
 
     if (itemId) {
       reportStop({
         item_id: itemId,
         media_source_id: cur.mediaSourceId || playerInfo?.media_source_id,
         position_seconds: liveTime,
-        duration_seconds: duration,
+        duration_seconds: effDuration,
         close_player: true,
         is_played: isFinished,
       }).unwrap().catch((err) => {
@@ -649,9 +696,14 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }
     // Invalidate resume list immediately in RTK Query cache
     dispatch(torrentsApi.util.invalidateTags([{ type: 'MountStatus', id: 'ResumeList' }]))
-    // Immediately close UI modal
-    onClose()
-  }, [reportStop, onClose, currentTime, duration, playerInfo?.resume_seconds, playerInfo?.item_id, playerInfo?.media_source_id, tconst, currentSeason, currentEpisode, dispatch])
+
+    // Gracefully handle browser back if opened in-app, or trigger onClose
+    if (window.history.state?.hasInAppHistory) {
+      window.history.back()
+    } else {
+      onClose()
+    }
+  }, [reportStop, onClose, currentTime, duration, playerInfo?.resume_seconds, playerInfo?.item_id, playerInfo?.media_source_id, playerInfo?.duration_seconds, playerInfo?.title, playerInfo?.ru_title, title, ruTitle, tconst, currentSeason, currentEpisode, dispatch])
 
   // Keep ref updated for unload/stop reporting
   useEffect(() => {
@@ -840,12 +892,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       }
     }
 
+    const localRecord = getLocalPlayback(tconst, currentSeason, currentEpisode, playerInfo.item_id)
+    const { effectiveResumeSeconds, isPlayed: isLocalPlayed } = resolveEffectiveResumeTime(
+      playerInfo.resume_seconds,
+      localRecord
+    )
+
     const hasResume = !!(
       !autoResume &&
-      playerInfo.resume_seconds &&
-      playerInfo.resume_seconds > 15 &&
+      effectiveResumeSeconds > 15 &&
+      !isLocalPlayed &&
       !playerInfo.is_played &&
-      playerInfo.resume_seconds < ((playerInfo.duration_seconds || 999999) - 30)
+      effectiveResumeSeconds < ((playerInfo.duration_seconds || 999999) - 30)
     )
 
     if (hasResume && !resumeDecisionMadeRef.current) {
@@ -864,8 +922,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       pendingSeekTimeRef.current !== null
         ? pendingSeekTimeRef.current
         : isNewEpisode
-        ? (resumeDecisionMadeRef.current || autoResume) && playerInfo.resume_seconds && !playerInfo.is_played
-          ? playerInfo.resume_seconds
+        ? (resumeDecisionMadeRef.current || autoResume) && effectiveResumeSeconds > 0 && !isLocalPlayed && !playerInfo.is_played
+          ? effectiveResumeSeconds
           : 0
         : video.currentTime || 0
 
@@ -1018,8 +1076,9 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        backBufferLength: 90,
-        maxBufferLength: 60,
+        backBufferLength: 60,
+        maxBufferLength: 30, // Optimal 30s buffer for unstable connections
+        maxMaxBufferLength: 60,
         startPosition: targetSeekTime > 0 ? targetSeekTime : -1,
         // Aggressive buffer hole jumping & non-fatal stall recovery
         maxBufferHole: 0.5,
@@ -1029,6 +1088,17 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         nudgeMaxRetry: 10,
         nudgeOnVideoHole: true,
         skipBufferHolePadding: 0.15,
+        // Fast-fail & resilient network timeout configuration for poor connections
+        fragLoadingTimeOut: 10000,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 1000,
+        fragLoadingMaxRetryTimeout: 30000,
+        manifestLoadingTimeOut: 10000,
+        manifestLoadingMaxRetry: 6,
+        manifestLoadingRetryDelay: 1000,
+        levelLoadingTimeOut: 10000,
+        levelLoadingMaxRetry: 6,
+        levelLoadingRetryDelay: 1000,
       })
       hlsRef.current = hls
 
@@ -1044,6 +1114,9 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsBuffering(false)
         setIsSwitchingQuality(false)
+        setIsReconnecting(false)
+        reconnectAttemptRef.current = 0
+        setReconnectAttempt(0)
         if (hasResume && !resumeDecisionMadeRef.current && !autoResume) {
           video.pause()
           setIsPlaying(false)
@@ -1063,16 +1136,39 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.warn('[Player] Fatal network error, reloading source...')
-              hls.startLoad()
+              console.warn('[Player] Fatal network error in Hls.js, attempting recovery...')
+              if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                setIsNetworkOffline(true)
+                return
+              }
+              if (reconnectAttemptRef.current < 5) {
+                hls.startLoad()
+              } else {
+                setIsConnectionExhausted(true)
+                setIsReconnecting(false)
+              }
               break
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('[Player] Fatal media error, attempting recovery...')
+              console.warn('[Player] Fatal media error in Hls.js, attempting recovery...')
               hls.recoverMediaError()
               break
             default:
-              console.error('[Player] Fatal HLS error:', data)
-              hls.destroy()
+              console.error('[Player] Fatal unrecoverable HLS error:', data)
+              if (reconnectAttemptRef.current < 5) {
+                const nextAtt = reconnectAttemptRef.current + 1
+                reconnectAttemptRef.current = nextAtt
+                setReconnectAttempt(nextAtt)
+                setIsReconnecting(true)
+                const v = videoRef.current
+                const curPos = v && !isNaN(v.currentTime) && v.currentTime > 0 ? v.currentTime : 0
+                pendingSeekTimeRef.current = curPos
+                seekTargetRef.current = curPos
+                setReconnectNonce((n) => n + 1)
+              } else {
+                setIsConnectionExhausted(true)
+                setIsReconnecting(false)
+                hls.destroy()
+              }
               break
           }
         } else {
@@ -1164,6 +1260,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     selectedAudioIndex,
     selectedTranscodeProfile,
     resumeDecisionNonce,
+    reconnectNonce,
     buildStreamUrl,
     reportStart,
   ])
@@ -1225,10 +1322,19 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     [selectedTranscodeProfile, currentTime, isPlaying, playerInfo?.transcode_profiles]
   )
 
+  const effectiveResumeSeconds = useMemo(() => {
+    const localRecord = getLocalPlayback(tconst, currentSeason, currentEpisode, playerInfo?.item_id)
+    const { effectiveResumeSeconds: eff } = resolveEffectiveResumeTime(
+      playerInfo?.resume_seconds,
+      localRecord
+    )
+    return eff
+  }, [tconst, currentSeason, currentEpisode, playerInfo?.item_id, playerInfo?.resume_seconds])
+
   const handleConfirmResume = () => {
     resumeDecisionMadeRef.current = true
     setShowResumePrompt(false)
-    const target = playerInfo?.resume_seconds || 0
+    const target = effectiveResumeSeconds || playerInfo?.resume_seconds || 0
     pendingSeekTimeRef.current = target
     seekTargetRef.current = target
     wasPlayingBeforeSwitchRef.current = true
@@ -1274,6 +1380,22 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         ? `${tconst}_s${currentSeason}_e${currentEpisode}`
         : `${tconst}_s0_e0`
       const itemId = cur.id || playerInfo?.item_id || fallbackItemId
+      const effDuration = duration || playerInfo?.duration_seconds || (video && !isNaN(video.duration) ? video.duration : 0)
+      const isPlayed = effDuration > 0 && (liveTime >= effDuration - 30 || liveTime / effDuration >= 0.9)
+
+      // Synchronously flush to localStorage so not a single second is lost on sudden reload
+      saveLocalPlayback({
+        tconst,
+        season: currentSeason,
+        episode: currentEpisode,
+        itemId: itemId,
+        positionSeconds: liveTime,
+        durationSeconds: effDuration,
+        isPlayed,
+        title: title || playerInfo?.title,
+        ruTitle: ruTitle || playerInfo?.ru_title,
+      })
+
       if (itemId) {
         reportStop({
           item_id: itemId,
@@ -1285,12 +1407,23 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       }
     }
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleBeforeUnload()
+      }
+    }
+
     window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handleBeforeUnload)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
+      handleBeforeUnload()
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handleBeforeUnload)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [reportStop, duration, currentSeason, currentEpisode, tconst, playerInfo?.item_id, playerInfo?.media_source_id])
+  }, [reportStop, duration, currentSeason, currentEpisode, tconst, playerInfo?.item_id, playerInfo?.media_source_id, title, ruTitle])
 
   // Periodic Progress Heartbeat (Every 10 seconds while playing)
   useEffect(() => {
@@ -1317,8 +1450,11 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     return () => clearInterval(interval)
   }, [isPlaying, playerInfo?.item_id, playerInfo?.media_source_id, duration, reportProgress])
 
-  // Active Playback Stall & Buffer Hole Watchdog
+  // Active Playback Stall & Buffer Hole Watchdog & Stream Auto-Recovery
   const lastPlaybackTimeRef = useRef<{ time: number; timestamp: number }>({ time: 0, timestamp: Date.now() })
+  const bufferingStartTimeRef = useRef<number | null>(null)
+  const lastAutoRecoveryAttemptRef = useRef<number>(0)
+  const reconnectAttemptRef = useRef<number>(0)
 
   useEffect(() => {
     const watchdogInterval = setInterval(() => {
@@ -1328,6 +1464,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       // Don't monitor if paused by user or during explicit seeking
       if (video.paused || !isPlaying || video.seeking) {
         lastPlaybackTimeRef.current = { time: video.currentTime, timestamp: Date.now() }
+        bufferingStartTimeRef.current = null
         return
       }
 
@@ -1335,11 +1472,19 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       const now = Date.now()
       const timeDiff = Math.abs(cur - lastPlaybackTimeRef.current.time)
 
-      // If playback position has advanced smoothly, update ref and clear false buffering flag
+      // If playback position has advanced smoothly, update ref and clear false buffering/reconnecting flags
       if (timeDiff >= 0.15) {
         lastPlaybackTimeRef.current = { time: cur, timestamp: now }
+        bufferingStartTimeRef.current = null
         if (isBuffering) {
           setIsBuffering(false)
+        }
+        if (isReconnecting) {
+          setIsReconnecting(false)
+        }
+        if (reconnectAttemptRef.current > 0) {
+          reconnectAttemptRef.current = 0
+          setReconnectAttempt(0)
         }
         return
       }
@@ -1369,6 +1514,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           video.currentTime = holeJumpTarget + 0.05
           video.play().catch(() => {})
           setIsBuffering(false)
+          bufferingStartTimeRef.current = null
           lastPlaybackTimeRef.current = { time: holeJumpTarget + 0.05, timestamp: now }
           return
         }
@@ -1379,6 +1525,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           video.currentTime = cur + 0.08
           video.play().catch(() => {})
           setIsBuffering(false)
+          bufferingStartTimeRef.current = null
           lastPlaybackTimeRef.current = { time: cur + 0.08, timestamp: now }
           return
         }
@@ -1386,12 +1533,181 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         // Case 3: Truly out of buffer (waiting for network chunks)
         if (!isBuffering) {
           setIsBuffering(true)
+          bufferingStartTimeRef.current = now
+
+          // Record stall timestamp for adaptive bandwidth tracking
+          const oneMinuteAgo = now - 60000
+          recentStallsRef.current = [...recentStallsRef.current.filter((t) => t > oneMinuteAgo), now]
+          if (recentStallsRef.current.length >= 3 && !showLowBandwidthPrompt) {
+            setShowLowBandwidthPrompt(true)
+          }
+        }
+
+        // Network Auto-Recovery Logic
+        const totalBufferingMs = bufferingStartTimeRef.current ? now - bufferingStartTimeRef.current : stallDurationMs
+
+        // If network is offline, wait for online event without exhausting attempts
+        if (isNetworkOffline) {
+          return
+        }
+
+        // If retries already exhausted, let manual resume dialog remain visible
+        if (isConnectionExhausted) {
+          return
+        }
+
+        if (reconnectAttemptRef.current >= 5) {
+          console.warn('[Player Recovery] Max reconnect attempts reached (5/5). Pausing auto-retries for user manual resume.')
+          setIsConnectionExhausted(true)
+          setIsReconnecting(false)
+          return
+        }
+
+        // Level 1: Soft recovery at 4-7s of continuous stall
+        if (totalBufferingMs >= 4000 && totalBufferingMs < 7000) {
+          if (now - lastAutoRecoveryAttemptRef.current >= 4000) {
+            lastAutoRecoveryAttemptRef.current = now
+            console.warn(`[Player Recovery] Soft recovery attempt at ${cur.toFixed(2)}s (stalled for ${(totalBufferingMs / 1000).toFixed(1)}s)...`)
+            if (hlsRef.current) {
+              hlsRef.current.recoverMediaError()
+              try {
+                hlsRef.current.startLoad(cur)
+              } catch {}
+            }
+          }
+        }
+
+        // Level 2: Hard stream reconnect at >= 7s of continuous stall
+        if (totalBufferingMs >= 7000) {
+          if (now - lastAutoRecoveryAttemptRef.current >= 6000) {
+            lastAutoRecoveryAttemptRef.current = now
+            const nextAttempt = reconnectAttemptRef.current + 1
+            reconnectAttemptRef.current = nextAttempt
+            setReconnectAttempt(nextAttempt)
+
+            if (nextAttempt >= 5) {
+              console.warn('[Player Recovery] Reconnect attempts exhausted (5/5). Showing connection lost card.')
+              setIsConnectionExhausted(true)
+              setIsReconnecting(false)
+              return
+            }
+
+            console.warn(`[Player Recovery] Hard reconnecting stream at ${cur.toFixed(2)}s (attempt ${nextAttempt}/5)...`)
+            setIsReconnecting(true)
+
+            // Flush local watch progress to ensure 0 lost seconds
+            saveLocalPlayback({
+              tconst,
+              season: currentSeason,
+              episode: currentEpisode,
+              itemId: playerInfo?.item_id,
+              positionSeconds: cur,
+              durationSeconds: duration,
+              isPlayed: false,
+              title: title || playerInfo?.title,
+              ruTitle: ruTitle || playerInfo?.ru_title,
+            })
+
+            pendingSeekTimeRef.current = cur
+            seekTargetRef.current = cur
+            setReconnectNonce((prev) => prev + 1)
+          }
         }
       }
     }, 500)
 
     return () => clearInterval(watchdogInterval)
-  }, [isPlaying, isBuffering])
+  }, [
+    isPlaying,
+    isBuffering,
+    isReconnecting,
+    isNetworkOffline,
+    isConnectionExhausted,
+    showLowBandwidthPrompt,
+    tconst,
+    currentSeason,
+    currentEpisode,
+    playerInfo?.item_id,
+    playerInfo?.title,
+    playerInfo?.ru_title,
+    duration,
+    title,
+    ruTitle,
+  ])
+
+  // Network Online / Offline Detection & Auto-Resumption
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[Player] Network restored (online event). Triggering immediate stream recovery...')
+      setIsNetworkOffline(false)
+      setIsConnectionExhausted(false)
+      reconnectAttemptRef.current = 0
+      setReconnectAttempt(0)
+      bufferingStartTimeRef.current = Date.now()
+      lastAutoRecoveryAttemptRef.current = Date.now()
+
+      const video = videoRef.current
+      const cur =
+        video && !isNaN(video.currentTime) && video.currentTime > 0
+          ? video.currentTime
+          : currentTime > 0
+          ? currentTime
+          : 0
+
+      pendingSeekTimeRef.current = cur
+      seekTargetRef.current = cur
+      setReconnectNonce((prev) => prev + 1)
+    }
+
+    const handleOffline = () => {
+      console.warn('[Player] Network lost (offline event).')
+      setIsNetworkOffline(true)
+      const video = videoRef.current
+      if (video && !isNaN(video.currentTime) && video.currentTime > 0) {
+        saveLocalPlayback({
+          tconst,
+          season: currentSeason,
+          episode: currentEpisode,
+          itemId: playerInfo?.item_id,
+          positionSeconds: video.currentTime,
+          durationSeconds: duration,
+          isPlayed: false,
+          title: title || playerInfo?.title,
+          ruTitle: ruTitle || playerInfo?.ru_title,
+        })
+      }
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [tconst, currentSeason, currentEpisode, playerInfo?.item_id, duration, currentTime, title, ruTitle])
+
+  const handleManualResume = useCallback(() => {
+    console.log('[Player Recovery] User manually triggered resume.')
+    setIsConnectionExhausted(false)
+    setIsReconnecting(true)
+    reconnectAttemptRef.current = 0
+    setReconnectAttempt(0)
+    bufferingStartTimeRef.current = Date.now()
+    lastAutoRecoveryAttemptRef.current = Date.now()
+
+    const video = videoRef.current
+    const cur =
+      video && !isNaN(video.currentTime) && video.currentTime > 0
+        ? video.currentTime
+        : currentTime > 0
+        ? currentTime
+        : 0
+
+    pendingSeekTimeRef.current = cur
+    seekTargetRef.current = cur
+    setReconnectNonce((prev) => prev + 1)
+  }, [currentTime])
 
   // Video Event Handlers
   const handleTimeUpdate = () => {
@@ -1399,10 +1715,28 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     if (!video) return
     const effectivePos = video.currentTime
     setCurrentTime(effectivePos)
-    if (playerInfo?.duration_seconds && playerInfo.duration_seconds > 0) {
-      setDuration(playerInfo.duration_seconds)
-    } else if (video.duration && !isNaN(video.duration)) {
-      setDuration(video.duration)
+    const effDuration = playerInfo?.duration_seconds && playerInfo.duration_seconds > 0
+      ? playerInfo.duration_seconds
+      : (video.duration && !isNaN(video.duration) ? video.duration : duration)
+    if (effDuration > 0) {
+      setDuration(effDuration)
+    }
+
+    // Periodic local progress tracking in localStorage (persists every 5s while playing)
+    if (Math.abs(effectivePos - lastSavedLocalTimeRef.current) >= 5.0 && effectivePos > 0) {
+      lastSavedLocalTimeRef.current = effectivePos
+      const isPlayed = effDuration > 0 && (effectivePos >= effDuration - 30 || effectivePos / effDuration >= 0.9)
+      saveLocalPlayback({
+        tconst,
+        season: currentSeason,
+        episode: currentEpisode,
+        itemId: playerInfo?.item_id,
+        positionSeconds: effectivePos,
+        durationSeconds: effDuration,
+        isPlayed,
+        title: title || playerInfo?.title,
+        ruTitle: ruTitle || playerInfo?.ru_title,
+      })
     }
 
     // Buffered range
@@ -1509,6 +1843,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     } else {
       video.pause()
       setIsPlaying(false)
+      const effDuration = duration || video.duration || 0
+      saveLocalPlayback({
+        tconst,
+        season: currentSeason,
+        episode: currentEpisode,
+        itemId: playerInfo?.item_id,
+        positionSeconds: currentPos,
+        durationSeconds: effDuration,
+        isPlayed: effDuration > 0 && (currentPos >= effDuration - 30 || currentPos / effDuration >= 0.9),
+        title: title || playerInfo?.title,
+        ruTitle: ruTitle || playerInfo?.ru_title,
+      })
       reportProgress({
         item_id: playerInfo?.item_id || '',
         media_source_id: playerInfo?.media_source_id,
@@ -1526,6 +1872,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
 
     video.currentTime = newTime
     setCurrentTime(newTime)
+    const effDuration = duration || video.duration || 0
+    saveLocalPlayback({
+      tconst,
+      season: currentSeason,
+      episode: currentEpisode,
+      itemId: playerInfo?.item_id,
+      positionSeconds: newTime,
+      durationSeconds: effDuration,
+      isPlayed: effDuration > 0 && (newTime >= effDuration - 30 || newTime / effDuration >= 0.9),
+      title: title || playerInfo?.title,
+      ruTitle: ruTitle || playerInfo?.ru_title,
+    })
     reportProgress({
       item_id: playerInfo?.item_id || '',
       media_source_id: playerInfo?.media_source_id,
@@ -1877,13 +2235,59 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         </div>
       )}
 
-      {/* Buffering Spinner */}
-      {isBuffering && (
+      {/* Buffering Spinner & Reconnecting Status */}
+      {isBuffering && !isConnectionExhausted && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 bg-black/30 backdrop-blur-[2px]">
           <Loader2 className="h-14 w-14 text-emerald-400 animate-spin" />
           <span className="text-xs text-zinc-300 font-medium tracking-wide mt-3">
-            Буферизация потока...
+            {isNetworkOffline
+              ? 'Ожидание сети...'
+              : isReconnecting
+              ? `Восстановление потока (попытка ${reconnectAttempt}/5)...`
+              : 'Буферизация потока...'}
           </span>
+        </div>
+      )}
+
+      {/* Connection Lost / Exhausted Retries Modal (Metro / Elevator / Deep Disconnect) */}
+      {isConnectionExhausted && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-md p-6 z-40 text-center pointer-events-auto animate-fade-in">
+          <div className="p-4 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 mb-4 shadow-lg shadow-amber-500/10">
+            <WifiOff className="h-10 w-10" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">
+            {isNetworkOffline ? 'Нет подключения к интернету' : 'Связь потеряна'}
+          </h3>
+          <p className="text-sm text-zinc-300 max-w-md mb-6 leading-relaxed">
+            {isNetworkOffline
+              ? 'Устройство отключено от сети. Воспроизведение продолжится автоматически сразу при появлении интернета.'
+              : 'Не удалось восстановить поток из-за нестабильного интернет-соединения. Нажмите кнопку, когда появится устойчивая сеть (например, после выхода из метро или лифта).'}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleManualResume()
+              }}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shadow-lg shadow-emerald-900/40 transition active:scale-95 cursor-pointer"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Возобновить просмотр
+            </button>
+            {qualityTorrentOptions && qualityTorrentOptions.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowQualityMenu(true)
+                }}
+                className="px-5 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-sm transition cursor-pointer"
+              >
+                Сменить качество / раздачу
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1977,7 +2381,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
             <div className="p-3 rounded-2xl bg-zinc-900/80 border border-white/5 w-full flex items-center justify-between text-xs">
               <span className="text-zinc-400">Остановлено на:</span>
               <span className="font-mono text-emerald-400 font-bold text-sm">
-                {formatTime(playerInfo.resume_seconds)}
+                {formatTime(effectiveResumeSeconds || playerInfo.resume_seconds)}
                 <span className="text-zinc-500 text-xs font-normal ml-1">
                   / {formatTime(playerInfo.duration_seconds || duration)}
                 </span>
@@ -1991,7 +2395,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                 className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95"
               >
                 <Play className="h-4 w-4 fill-current" />
-                <span>Продолжить с {formatTime(playerInfo.resume_seconds)}</span>
+                <span>Продолжить с {formatTime(effectiveResumeSeconds || playerInfo.resume_seconds)}</span>
               </button>
               <button
                 onClick={handleStartFromBeginning}
@@ -2057,6 +2461,38 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-zinc-900/90 border border-emerald-500/40 text-emerald-300 text-xs font-semibold backdrop-blur-md shadow-2xl pointer-events-none flex items-center gap-2 animate-fade-in">
           <SlidersHorizontal className="h-3.5 w-3.5 text-emerald-400" />
           <span>{qualityToast}</span>
+        </div>
+      )}
+
+      {/* Low Bandwidth / Frequent Stalls Adaptive Suggestion */}
+      {showLowBandwidthPrompt && !isConnectionExhausted && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-zinc-900/95 border border-amber-500/40 text-zinc-200 px-4 py-2.5 rounded-full shadow-2xl backdrop-blur-md animate-fade-in text-xs sm:text-sm pointer-events-auto">
+          <SignalZero className="h-4 w-4 text-amber-400 shrink-0 animate-pulse" />
+          <span className="font-medium text-amber-200/90 text-xs">
+            Нестабильная связь. Рекомендуем снизить качество для непрерывного просмотра
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowLowBandwidthPrompt(false)
+              setShowQualityMenu(true)
+            }}
+            className="px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs transition active:scale-95 cursor-pointer shrink-0"
+          >
+            Сменить
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowLowBandwidthPrompt(false)
+            }}
+            className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition cursor-pointer shrink-0"
+            aria-label="Закрыть"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 

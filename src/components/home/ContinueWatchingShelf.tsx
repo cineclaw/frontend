@@ -3,6 +3,11 @@ import { Play, PlayCircle, Clock, Sparkles, X, Trash2 } from "lucide-react"
 import { useAppDispatch, useAppSelector } from "@/store/store"
 import { openCinemaPlayer } from "@/store/searchSlice"
 import { useGetResumeItemsQuery, useDeleteResumeItemMutation, type ResumeItem } from "@/api/torrentsApi"
+import {
+  getLocalPlayback,
+  removeLocalPlayback,
+  resolveEffectiveResumeTime,
+} from "@/lib/playbackProgress"
 
 const resolveThumbnail = (item: ResumeItem): string => {
   if (item.image_url) {
@@ -69,12 +74,18 @@ const ContinueWatchingCard: React.FC<ContinueWatchingCardProps> = ({
     }
   }
 
-  // Robust percentage calculation directly from resume / duration seconds
+  // Robust percentage calculation considering local progress priority
+  const effectiveResume = useMemo(() => {
+    const local = getLocalPlayback(item.tconst, item.season_number, item.episode_number, item.item_id)
+    const { effectiveResumeSeconds } = resolveEffectiveResumeTime(item.resume_seconds, local)
+    return effectiveResumeSeconds || item.resume_seconds || 0
+  }, [item])
+
   const percent = item.duration_seconds > 0
-    ? Math.min(100, Math.max(3, Math.round((item.resume_seconds / item.duration_seconds) * 100)))
+    ? Math.min(100, Math.max(3, Math.round((effectiveResume / item.duration_seconds) * 100)))
     : Math.min(100, Math.max(3, Math.round(item.played_percentage)))
 
-  const remainingText = formatRemainingMinutes(item.duration_seconds, item.resume_seconds)
+  const remainingText = formatRemainingMinutes(item.duration_seconds, effectiveResume)
 
   return (
     <div
@@ -312,6 +323,7 @@ export const ContinueWatchingShelf: React.FC = () => {
 
   const handleRemove = async (item: ResumeItem) => {
     try {
+      removeLocalPlayback(item.tconst, item.season_number, item.episode_number, item.item_id)
       await deleteResumeItem({
         item_id: item.item_id,
         tconst: item.tconst,

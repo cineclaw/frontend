@@ -16,10 +16,12 @@ interface SearchState {
   filters: SearchFilters
   viewMode: 'grid' | 'list'
   selectedMovie: MovieDoc | null
+  selectedMovieTconst: string | null
   selectedPersonId: number | null
   selectedShelfId: string | null
   selectedMediaType: 'movie' | 'tv'
   isFiltersOpen: boolean
+  isDiagnosticOpen: boolean
   activePlayer: ActiveCinemaPlayer | null
 }
 
@@ -37,10 +39,12 @@ const initialState: SearchState = {
   filters: initialFilters,
   viewMode: typeof window !== 'undefined' && window.innerWidth < 768 ? 'list' : 'grid',
   selectedMovie: null,
+  selectedMovieTconst: null,
   selectedPersonId: null,
   selectedShelfId: null,
   selectedMediaType: 'movie',
   isFiltersOpen: false,
+  isDiagnosticOpen: false,
   activePlayer: null,
 }
 
@@ -82,6 +86,15 @@ export const searchSlice = createSlice({
     },
     setSelectedMovie: (state, action: PayloadAction<MovieDoc | null>) => {
       state.selectedMovie = action.payload
+      state.selectedMovieTconst = action.payload ? action.payload.tconst : null
+    },
+    setSelectedMovieTconst: (state, action: PayloadAction<string | null>) => {
+      state.selectedMovieTconst = action.payload
+      if (!action.payload) {
+        state.selectedMovie = null
+      } else if (state.selectedMovie && state.selectedMovie.tconst !== action.payload) {
+        state.selectedMovie = null
+      }
     },
     setSelectedPersonId: (state, action: PayloadAction<number | null>) => {
       state.selectedPersonId = action.payload
@@ -97,6 +110,9 @@ export const searchSlice = createSlice({
     },
     setFiltersOpen: (state, action: PayloadAction<boolean>) => {
       state.isFiltersOpen = action.payload
+    },
+    setDiagnosticOpen: (state, action: PayloadAction<boolean>) => {
+      state.isDiagnosticOpen = action.payload
     },
     openCinemaPlayer: (state, action: PayloadAction<ActiveCinemaPlayer>) => {
       state.activePlayer = action.payload
@@ -118,11 +134,13 @@ export const {
   resetFilters,
   setViewMode,
   setSelectedMovie,
+  setSelectedMovieTconst,
   setSelectedPersonId,
   setSelectedShelfId,
   setSelectedMediaType,
   toggleFiltersOpen,
   setFiltersOpen,
+  setDiagnosticOpen,
   openCinemaPlayer,
   closeCinemaPlayer,
 } = searchSlice.actions

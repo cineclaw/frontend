@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
-import { setSelectedMovie, openCinemaPlayer } from "@/store/searchSlice"
+import { setSelectedMovie, setSelectedMovieTconst, openCinemaPlayer } from "@/store/searchSlice"
 import {
   Dialog,
   DialogContent,
@@ -46,7 +46,7 @@ import {
   useAddToWatchlistMutation,
   useRemoveFromWatchlistMutation,
 } from "@/api/torrentsApi"
-import { useGetMovieMetadataQuery } from "@/api/moviesApi"
+import { useGetMovieMetadataQuery, useSearchMoviesQuery } from "@/api/moviesApi"
 import { useIsMobile } from "@/hooks/useMediaQuery"
 import {
   MovieOverview,
@@ -61,13 +61,34 @@ import type { VideoItem, MovieDoc } from "@/api/types"
 export function MovieModal() {
   const dispatch = useAppDispatch()
   const movie = useAppSelector((state) => state.search.selectedMovie)
+  const selectedMovieTconst = useAppSelector((state) => state.search.selectedMovieTconst)
   const activePlayer = useAppSelector((state) => state.search.activePlayer)
   const isPlayerActive = Boolean(activePlayer)
+
+  const targetTconst = movie?.tconst || selectedMovieTconst || ""
+
+  // When loaded directly via /movie/:tconst or on reload, resolve movie doc from indexer
+  const { data: searchResult } = useSearchMoviesQuery(
+    { q: targetTconst },
+    { skip: !targetTconst || !!movie }
+  )
+
+  useEffect(() => {
+    if (!movie && searchResult?.hits && searchResult.hits.length > 0) {
+      const match =
+        searchResult.hits.find((h) => h.movie.tconst === targetTconst) ||
+        searchResult.hits[0]
+      if (match?.movie) {
+        dispatch(setSelectedMovie(match.movie))
+      }
+    }
+  }, [movie, searchResult, targetTconst, dispatch])
+
   const lastMovieRef = useRef<MovieDoc | null>(null)
   if (movie) {
     lastMovieRef.current = movie
   }
-  const activeMovie = movie || lastMovieRef.current
+  const activeMovie = movie || searchResult?.hits?.[0]?.movie || lastMovieRef.current
 
   const [showConfirmUnmount, setShowConfirmUnmount] = useState(false)
   const [activeTrailer, setActiveTrailer] = useState<VideoItem | null>(null)
@@ -184,58 +205,53 @@ export function MovieModal() {
     }
   }
 
-  // Lock background body scroll and handle browser back button / gestures on mobile
+  // Lock background body scroll and handle keyboard Escape
   useEffect(() => {
-    if (!movie) return
+    if (!activeMovie && !targetTconst) return
 
     const originalOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
-
-    window.history.pushState(
-      { ...(window.history.state || {}), cineclawMovie: movie.tconst },
-      ""
-    )
-
-    const handlePopState = (e: PopStateEvent) => {
-      // If a trailer is currently open, close it first without exiting the movie screen
-      if (activeTrailer) {
-        setActiveTrailer(null)
-      } else if (!e.state?.cineclawMovie) {
-        dispatch(setSelectedMovie(null))
-      }
-    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (activeTrailer) {
           setActiveTrailer(null)
         } else {
-          dispatch(setSelectedMovie(null))
+          handleBack()
         }
       }
     }
 
-    window.addEventListener("popstate", handlePopState)
     window.addEventListener("keydown", handleKeyDown)
     return () => {
       document.body.style.overflow = originalOverflow
-      window.removeEventListener("popstate", handlePopState)
       window.removeEventListener("keydown", handleKeyDown)
     }
-  }, [movie?.tconst, activeTrailer, dispatch])
-
-  if (!activeMovie) return null
+  }, [activeMovie?.tconst, targetTconst, activeTrailer])
 
   const handleBack = () => {
     if (activeTrailer) {
       setActiveTrailer(null)
       return
     }
-    if (window.history.state?.cineclawMovie) {
+    if (window.history.state?.hasInAppHistory) {
       window.history.back()
     } else {
       dispatch(setSelectedMovie(null))
+      dispatch(setSelectedMovieTconst(null))
     }
+  }
+
+  if (!activeMovie) {
+    if (!targetTconst) return null
+    return (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-cinema-950/90 backdrop-blur-xl">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+          <p className="text-sm font-medium text-zinc-400">Загрузка карточки фильма...</p>
+        </div>
+      </div>
+    )
   }
 
   const handleSelectTrailer = (video: VideoItem) => {
@@ -275,7 +291,7 @@ export function MovieModal() {
   if (isMobile) {
     return (
       <AnimatePresence>
-        {movie && (
+        {(movie || selectedMovieTconst) && (
           <motion.div
             key="mobile-movie-screen"
             initial={{ opacity: 0, x: "100%" }}
@@ -651,9 +667,9 @@ export function MovieModal() {
   return (
     <>
       <Dialog
-        open={!!movie && !isPlayerActive}
+        open={Boolean((movie || selectedMovieTconst) && !isPlayerActive)}
         onOpenChange={(open) => {
-          if (!open && !isPlayerActive) dispatch(setSelectedMovie(null))
+          if (!open && !isPlayerActive) handleBack()
         }}
       >
         <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-cinema-900 border-border/80 p-4 sm:p-6 rounded-2xl shadow-2xl custom-scrollbar">

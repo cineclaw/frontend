@@ -127,32 +127,24 @@ export function PersonModal() {
     }
   }, [personId])
 
-  // Handle browser back gesture / popstate
+  // Handle keyboard Escape
   useEffect(() => {
     if (!personId) return
 
-    window.history.pushState({ cineclawPerson: personId }, "")
-
-    const handlePopState = () => {
-      dispatch(setSelectedPersonId(null))
-    }
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        dispatch(setSelectedPersonId(null))
+        handleClose()
       }
     }
 
-    window.addEventListener("popstate", handlePopState)
     window.addEventListener("keydown", handleKeyDown)
     return () => {
-      window.removeEventListener("popstate", handlePopState)
       window.removeEventListener("keydown", handleKeyDown)
     }
-  }, [personId, dispatch])
+  }, [personId])
 
   const handleClose = () => {
-    if (window.history.state?.cineclawPerson) {
+    if (window.history.state?.hasInAppHistory) {
       window.history.back()
     } else {
       dispatch(setSelectedPersonId(null))

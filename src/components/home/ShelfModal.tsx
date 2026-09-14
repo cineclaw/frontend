@@ -214,36 +214,28 @@ export function ShelfModal() {
   }
 
 
-  // Browser back-gesture support via history pushState
-  const isClosingRef = useRef(false)
+  // Handle keyboard Escape
   useEffect(() => {
-    if (selectedShelfId) {
-      isClosingRef.current = false
-      window.history.pushState(
-        { ...(window.history.state || {}), cineclawShelf: selectedShelfId },
-        ""
-      )
-
-      const handlePopState = (e: PopStateEvent) => {
-        if (!e.state?.cineclawShelf) {
-          dispatch(setSelectedShelfId(null))
-        }
-      }
-
-      window.addEventListener("popstate", handlePopState)
-
-      return () => {
-        window.removeEventListener("popstate", handlePopState)
+    if (!selectedShelfId) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose()
       }
     }
-  }, [selectedShelfId, dispatch])
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [selectedShelfId])
 
+  const isClosingRef = useRef(false)
   const handleClose = useCallback(() => {
     if (isClosingRef.current) return
     isClosingRef.current = true
-    dispatch(setSelectedShelfId(null))
-    if (window.history.state?.cineclawShelf) {
+    if (window.history.state?.hasInAppHistory) {
       window.history.back()
+    } else {
+      dispatch(setSelectedShelfId(null))
     }
     setTimeout(() => {
       isClosingRef.current = false

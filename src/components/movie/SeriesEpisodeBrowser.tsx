@@ -18,6 +18,7 @@ import {
 import { getTmdbImageUrl } from "@/lib/tmdbImages"
 import { formatRuntime } from "@/lib/utils"
 import { useDefaultQuality, selectPreferredTorrent } from "@/lib/userSettings"
+import { getLocalPlayback, resolveEffectiveResumeTime } from "@/lib/playbackProgress"
 
 interface SeriesEpisodeBrowserProps {
   tconst: string
@@ -119,10 +120,12 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
     if (playerInfo?.episodes) {
       for (const ep of playerInfo.episodes) {
         if (ep.season_number === activeSeasonNumber) {
+          const local = getLocalPlayback(tconst, activeSeasonNumber, ep.episode_number, ep.id)
+          const { effectiveResumeSeconds, isPlayed } = resolveEffectiveResumeTime(ep.resume_seconds, local)
           map.set(ep.episode_number, {
             id: ep.id,
-            resume_seconds: ep.resume_seconds,
-            is_played: ep.is_played,
+            resume_seconds: effectiveResumeSeconds,
+            is_played: isPlayed || ep.is_played,
           })
         }
       }
@@ -132,16 +135,19 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
       for (const [key, epStatus] of Object.entries(seriesProgress.episodes)) {
         if (epStatus.season_number === activeSeasonNumber) {
           const prev = map.get(epStatus.episode_number)
+          const remoteResume = epStatus.position_seconds || prev?.resume_seconds || 0
+          const local = getLocalPlayback(tconst, activeSeasonNumber, epStatus.episode_number, key)
+          const { effectiveResumeSeconds, isPlayed } = resolveEffectiveResumeTime(remoteResume, local)
           map.set(epStatus.episode_number, {
             id: prev?.id || key,
-            resume_seconds: epStatus.position_seconds || prev?.resume_seconds || 0,
-            is_played: epStatus.is_completed || prev?.is_played || false,
+            resume_seconds: effectiveResumeSeconds,
+            is_played: isPlayed || epStatus.is_completed || prev?.is_played || false,
           })
         }
       }
     }
     return map
-  }, [playerInfo?.episodes, seriesProgress?.episodes, activeSeasonNumber])
+  }, [playerInfo?.episodes, seriesProgress?.episodes, activeSeasonNumber, tconst])
 
   // Determine the smartest next episode for this season
   const nextEpisodeToWatch = useMemo(() => {

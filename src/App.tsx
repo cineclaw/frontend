@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { useAppSelector, useAppDispatch } from "@/store/store"
 import { useSearchMoviesQuery } from "@/api/moviesApi"
 import { Header } from "@/components/layout/Header"
@@ -12,15 +12,21 @@ import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
 import { LoginModal } from "@/components/auth/LoginModal"
 import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
-import { toggleFiltersOpen, closeCinemaPlayer } from "@/store/searchSlice"
+import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen } from "@/store/searchSlice"
+import { useAppRouting } from "@/hooks/useAppRouting"
 
 export default function App() {
   const dispatch = useAppDispatch()
-  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false)
+  useAppRouting()
+
   const { isAuthenticated } = useAppSelector((state) => state.auth)
-  const { debouncedQuery, filters, isFiltersOpen, activePlayer } = useAppSelector(
-    (state) => state.search
-  )
+  const {
+    debouncedQuery,
+    filters,
+    isFiltersOpen,
+    activePlayer,
+    isDiagnosticOpen,
+  } = useAppSelector((state) => state.search)
 
   const {
     data,
@@ -59,34 +65,16 @@ export default function App() {
     }
   }, [debouncedQuery, data?.hits])
 
-  // Hash listener for #diagnostic
-  useEffect(() => {
-    const handleHash = () => {
-      if (window.location.hash === "#diagnostic") {
-        setIsDiagnosticOpen(true)
-      } else {
-        setIsDiagnosticOpen(false)
-      }
-    }
-    handleHash()
-    window.addEventListener("hashchange", handleHash)
-    window.addEventListener("popstate", handleHash)
-    return () => {
-      window.removeEventListener("hashchange", handleHash)
-      window.removeEventListener("popstate", handleHash)
-    }
-  }, [])
-
   const handleOpenDiagnostic = () => {
-    window.history.pushState({ modal: "diagnostic" }, "", "#diagnostic")
-    setIsDiagnosticOpen(true)
+    dispatch(setDiagnosticOpen(true))
   }
 
   const handleCloseDiagnostic = () => {
-    if (window.location.hash === "#diagnostic") {
+    if (window.history.state?.hasInAppHistory) {
       window.history.back()
+    } else {
+      dispatch(setDiagnosticOpen(false))
     }
-    setIsDiagnosticOpen(false)
   }
 
   return (
