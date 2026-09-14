@@ -40,28 +40,7 @@ export function useQuickPlay() {
         let effectiveTconst = tconst
         let effectiveRuTitle = ruTitle
 
-        // 0. If no IMDb tconst, try Tantivy title search first
-        if (!effectiveTconst) {
-          const query = effectiveRuTitle || title
-          if (query) {
-            try {
-              const searchRes = await triggerSearch({
-                q: query,
-                type: isSeries ? "tvSeries" : "movie",
-              }).unwrap()
-              if (searchRes?.hits && searchRes.hits.length > 0) {
-                effectiveTconst = searchRes.hits[0].movie.tconst
-                if (!effectiveRuTitle && searchRes.hits[0].movie.title_ru) {
-                  effectiveRuTitle = searchRes.hits[0].movie.title_ru
-                }
-              }
-            } catch {
-              // ignore
-            }
-          }
-        }
-
-        // If still no tconst and a genuine tmdbId is present, resolve via TMDB
+        // 1. If a genuine tmdbId is present, resolve via TMDB first (100% deterministic external_ids lookup)
         if (!effectiveTconst && tmdbId && tmdbId > 0) {
           try {
             const resolved = await triggerResolve({
@@ -74,8 +53,31 @@ export function useQuickPlay() {
                 effectiveRuTitle = resolved.title_ru
               }
             }
-          } catch (resErr) {
-            console.warn("Could not resolve TMDB movie:", resErr)
+          } catch {
+            // ignore
+          }
+        }
+
+        // 2. Fallback to Tantivy title search (constrained by year when available to prevent wrong matches)
+        if (!effectiveTconst) {
+          const query = effectiveRuTitle || title
+          if (query) {
+            try {
+              const searchRes = await triggerSearch({
+                q: query,
+                type: isSeries ? "tvSeries" : "movie",
+                year_from: year ? year : undefined,
+                year_to: year ? year : undefined,
+              }).unwrap()
+              if (searchRes?.hits && searchRes.hits.length > 0) {
+                effectiveTconst = searchRes.hits[0].movie.tconst
+                if (!effectiveRuTitle && searchRes.hits[0].movie.title_ru) {
+                  effectiveRuTitle = searchRes.hits[0].movie.title_ru
+                }
+              }
+            } catch {
+              // ignore
+            }
           }
         }
 

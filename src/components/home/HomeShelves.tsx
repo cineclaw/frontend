@@ -59,13 +59,32 @@ export function HomeShelves() {
     setResolvingId(item.id)
 
     try {
-      // 1. First try Tantivy title search
+      // 1. First resolve via exact TMDB ID if item is from a real TMDB shelf (100% deterministic external_ids lookup)
+      if (!isTrackerItem && item.id) {
+        try {
+          const res = await triggerResolve({
+            mediaType: item.media_type,
+            tmdbId: item.id,
+          }).unwrap()
+
+          if (res) {
+            dispatch(setSelectedMovie(res))
+            return
+          }
+        } catch (err) {
+          console.warn("Failed to resolve via TMDB, falling back to title search:", err)
+        }
+      }
+
+      // 2. Fallback to Tantivy title search (constrained by year when available to prevent wrong matches)
       const searchQuery = item.original_title || item.title
       if (searchQuery) {
         try {
           const searchRes = await triggerSearch({
             q: searchQuery,
             type: item.media_type === "tv" ? "tvSeries" : "movie",
+            year_from: item.year ? item.year : undefined,
+            year_to: item.year ? item.year : undefined,
           }).unwrap()
           if (searchRes?.hits && searchRes.hits.length > 0) {
             dispatch(setSelectedMovie(searchRes.hits[0].movie))
@@ -73,19 +92,6 @@ export function HomeShelves() {
           }
         } catch {
           // ignore and proceed to fallback
-        }
-      }
-
-      // 2. Only resolve via TMDB if item is from a real TMDB shelf (not tracker synthetic index)
-      if (!isTrackerItem && item.id) {
-        const res = await triggerResolve({
-          mediaType: item.media_type,
-          tmdbId: item.id,
-        }).unwrap()
-
-        if (res) {
-          dispatch(setSelectedMovie(res))
-          return
         }
       }
     } catch (err) {
