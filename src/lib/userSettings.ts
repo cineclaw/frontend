@@ -80,7 +80,8 @@ export function selectPreferredTorrent(
   torrents: TorrentResult[] | undefined,
   preferred: QualityPreference = "1080p",
   targetSeason?: number | null,
-  isSeries?: boolean
+  isSeries?: boolean,
+  targetYear?: number | null
 ): TorrentResult | null {
   if (!torrents || torrents.length === 0) return null
 
@@ -95,7 +96,7 @@ export function selectPreferredTorrent(
   const searchOrder = tierPriorities[preferred] || tierPriorities["1080p"]
 
   for (const tier of searchOrder) {
-    const candidate = pickBestTorrentForQuality(torrents, tier, targetSeason, isSeries)
+    const candidate = pickBestTorrentForQuality(torrents, tier, targetSeason, isSeries, targetYear)
     if (candidate) {
       return candidate
     }
@@ -105,7 +106,7 @@ export function selectPreferredTorrent(
   let best: TorrentResult | null = null
   let bestScore = -Infinity
   for (const t of torrents) {
-    const s = scoreTorrent(t, targetSeason, isSeries)
+    const s = scoreTorrent(t, targetSeason, isSeries, targetYear)
     if (s > bestScore) {
       bestScore = s
       best = t

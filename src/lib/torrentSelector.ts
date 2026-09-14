@@ -85,13 +85,52 @@ export function extractAudioLabel(title: string): string {
   return "Русская озвучка"
 }
 
+export function extractReleaseYear(title: string): number | null {
+  const m = title.match(/[\(\[]\s*(19\d{2}|20\d{2})/)
+  if (m) {
+    const y = parseInt(m[1], 10)
+    if (y >= 1900 && y <= 2035) return y
+  }
+  const standalone = title.match(/\b(19\d{2}|20\d{2})\b/)
+  if (standalone) {
+    const y = parseInt(standalone[1], 10)
+    if (y >= 1900 && y <= 2035) return y
+  }
+  return null
+}
+
 export function scoreTorrent(
   torrent: TorrentResult,
   targetSeason?: number | null,
-  isSeries?: boolean
+  isSeries?: boolean,
+  targetYear?: number | null
 ): number {
   let score = 0
   const title = (torrent.title || "").toLowerCase()
+
+  // 0. Year Matching (Critical for avoiding completely wrong films)
+  if (targetYear && targetYear > 0) {
+    const releaseYear = extractReleaseYear(torrent.title || "")
+    if (releaseYear) {
+      if (!isSeries) {
+        const diff = Math.abs(releaseYear - targetYear)
+        if (diff === 0) {
+          score += 400 // exact year match
+        } else if (diff === 1) {
+          score += 200 // boundary year (festival vs digital upload)
+        } else {
+          score -= 3000 // completely wrong movie from another decade/year!
+        }
+      } else {
+        // TV Series
+        if (releaseYear < targetYear - 1) {
+          score -= 3000 // release predates series
+        } else {
+          score += 150 // release within series timeline
+        }
+      }
+    }
+  }
 
   // 1. Seeders score: Primary metric for streaming reliability
   const seeders = torrent.seeds || 0
@@ -184,7 +223,8 @@ export function pickBestTorrentForQuality(
   torrents: TorrentResult[] | undefined,
   quality: QualityTier,
   targetSeason?: number | null,
-  isSeries?: boolean
+  isSeries?: boolean,
+  targetYear?: number | null
 ): TorrentResult | null {
   if (!torrents || torrents.length === 0) return null
 
@@ -195,7 +235,7 @@ export function pickBestTorrentForQuality(
   let bestScore = -Infinity
 
   for (const t of candidates) {
-    const s = scoreTorrent(t, targetSeason, isSeries)
+    const s = scoreTorrent(t, targetSeason, isSeries, targetYear)
     if (s > bestScore) {
       bestScore = s
       best = t
@@ -210,7 +250,8 @@ export function getQualityOptions(
   mountedVersions: string[] = [],
   targetSeason?: number | null,
   isSeries?: boolean,
-  mountedSeasons: number[] = []
+  mountedSeasons: number[] = [],
+  targetYear?: number | null
 ): QualityOption[] {
   const versionsUpper = mountedVersions.map((v) => v.toUpperCase())
   const isSeasonActuallyMounted =
@@ -231,7 +272,7 @@ export function getQualityOptions(
       }
     }
 
-    const bestTorrent = pickBestTorrentForQuality(torrents, tier, targetSeason, isSeries)
+    const bestTorrent = pickBestTorrentForQuality(torrents, tier, targetSeason, isSeries, targetYear)
     const isAvailable = bestTorrent !== null || isMounted
 
     return {

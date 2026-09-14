@@ -60,8 +60,8 @@ export const QualityActionButtons: React.FC<QualityActionButtonsProps> = ({
 
   // Compute quality options
   const qualityOptions = useMemo(() => {
-    return getQualityOptions(torrents, mountStatus?.versions, targetSeason, isSeries, mountStatus?.seasons)
-  }, [torrents, mountStatus?.versions, targetSeason, isSeries, mountStatus?.seasons])
+    return getQualityOptions(torrents, mountStatus?.versions, targetSeason, isSeries, mountStatus?.seasons, year)
+  }, [torrents, mountStatus?.versions, targetSeason, isSeries, mountStatus?.seasons, year])
 
   // Determine initial selected quality
   const [selectedQuality, setSelectedQuality] = useState<QualityTier>(() => {

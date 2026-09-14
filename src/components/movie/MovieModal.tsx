@@ -106,6 +106,7 @@ export function MovieModal() {
       q: mainTitle,
       imdb_id: activeMovie?.tconst || "",
       type: isSeries ? "tv" : "movie",
+      year: activeMovie?.year || undefined,
       limit: 100,
     },
     { skip: !activeMovie?.tconst }
@@ -153,7 +154,7 @@ export function MovieModal() {
 
     try {
       if (torrents && torrents.length > 0) {
-        const bestTorrent = selectPreferredTorrent(torrents, defaultQuality, null, false)
+        const bestTorrent = selectPreferredTorrent(torrents, defaultQuality, null, false, activeMovie.year)
         if (bestTorrent && (bestTorrent.magnet || bestTorrent.id)) {
           await mountTorrent({
             tconst: activeMovie.tconst,

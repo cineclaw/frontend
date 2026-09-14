@@ -105,6 +105,7 @@ export function useQuickPlay() {
             imdb_id: effectiveTconst || undefined,
             type: "tv",
             season: targetSeason,
+            year: year || undefined,
             limit: 50,
           }).unwrap()
 
@@ -112,7 +113,8 @@ export function useQuickPlay() {
             torrentsRes,
             preferredQuality,
             targetSeason,
-            true
+            true,
+            year
           )
 
           if (effectiveTconst && bestTorrent && (bestTorrent.magnet || bestTorrent.id)) {
@@ -156,6 +158,7 @@ export function useQuickPlay() {
             q: mainQuery,
             imdb_id: effectiveTconst || undefined,
             type: "movie",
+            year: year || undefined,
             limit: 50,
           }).unwrap()
 
@@ -163,7 +166,8 @@ export function useQuickPlay() {
             torrentsRes,
             preferredQuality,
             null,
-            false
+            false,
+            year
           )
 
           if (effectiveTconst && bestTorrent && (bestTorrent.magnet || bestTorrent.id)) {

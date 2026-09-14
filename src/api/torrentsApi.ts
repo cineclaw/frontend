@@ -43,6 +43,7 @@ export interface TorrentsQueryParams {
   refresh_cache?: boolean
   limit?: number
   season?: number
+  year?: number
   resolution?: string
 }
 
@@ -57,6 +58,7 @@ export const torrentsApi = createApi({
         if (params.q) queryParams.q = params.q
         if (params.imdb_id) queryParams.imdb_id = params.imdb_id
         if (params.type) queryParams.type = params.type
+        if (params.year) queryParams.year = params.year.toString()
         if (params.refresh_cache) queryParams.refresh_cache = 'true'
         if (params.limit) queryParams.limit = params.limit.toString()
         if (params.season !== undefined && params.season !== null && params.season > 0) {
@@ -81,6 +83,7 @@ export const torrentsApi = createApi({
         if (params.q) queryParams.q = params.q
         if (params.imdb_id) queryParams.imdb_id = params.imdb_id
         if (params.type) queryParams.type = params.type
+        if (params.year) queryParams.year = params.year.toString()
         if (params.limit) queryParams.limit = params.limit.toString()
         if (params.season !== undefined && params.season !== null && params.season > 0) {
           queryParams.season = params.season.toString()
