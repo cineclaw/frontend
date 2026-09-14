@@ -175,12 +175,14 @@ export const SeriesEpisodeBrowser: React.FC<SeriesEpisodeBrowserProps> = ({
   const hasUnwatchedPrior = (targetSeason: number, targetEpisode: number): boolean => {
     if (!episodesData || episodesData.length === 0) return false
     for (const ep of episodesData) {
+      if (ep.season_number <= 0) continue
       if (
         ep.season_number < targetSeason ||
         (ep.season_number === targetSeason && ep.episode_number < targetEpisode)
       ) {
-        const key = `${ep.season_number}_${ep.episode_number}`
-        const status = seriesProgress?.episodes?.[key]
+        const keyX = `${ep.season_number}x${ep.episode_number}`
+        const keyUnderscore = `${ep.season_number}_${ep.episode_number}`
+        const status = seriesProgress?.episodes?.[keyX] || seriesProgress?.episodes?.[keyUnderscore]
         if (!status?.is_completed) {
           return true
         }

@@ -6,7 +6,10 @@ import {
   useMountTorrentMutation,
   useGetResumeItemsQuery,
 } from "@/api/torrentsApi"
-import { useLazyResolveTmdbMovieQuery } from "@/api/moviesApi"
+import {
+  useLazyResolveTmdbMovieQuery,
+  useLazySearchMoviesQuery,
+} from "@/api/moviesApi"
 import { selectPreferredTorrent, getDefaultQuality } from "@/lib/userSettings"
 
 interface QuickPlayParams {
@@ -23,12 +26,13 @@ export function useQuickPlay() {
   const [triggerGetTorrents] = useLazyGetTorrentsQuery()
   const [mountTorrent] = useMountTorrentMutation()
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
+  const [triggerSearch] = useLazySearchMoviesQuery()
   const { data: resumeItems } = useGetResumeItemsQuery()
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
   const quickPlay = useCallback(
     async ({ tconst, tmdbId, title, ruTitle, isSeries = false, year }: QuickPlayParams) => {
-      const activeId = tconst || (tmdbId ? `tmdb-${tmdbId}` : "")
+      const activeId = tconst || (tmdbId ? `tmdb-${tmdbId}` : `title-${encodeURIComponent(title)}`)
       if (!activeId) return
       setLoadingId(activeId)
 
@@ -36,8 +40,29 @@ export function useQuickPlay() {
         let effectiveTconst = tconst
         let effectiveRuTitle = ruTitle
 
-        // 0. If no IMDb tconst, resolve via TMDB
-        if (!effectiveTconst && tmdbId) {
+        // 0. If no IMDb tconst, try Tantivy title search first
+        if (!effectiveTconst) {
+          const query = effectiveRuTitle || title
+          if (query) {
+            try {
+              const searchRes = await triggerSearch({
+                q: query,
+                type: isSeries ? "tvSeries" : "movie",
+              }).unwrap()
+              if (searchRes?.hits && searchRes.hits.length > 0) {
+                effectiveTconst = searchRes.hits[0].movie.tconst
+                if (!effectiveRuTitle && searchRes.hits[0].movie.title_ru) {
+                  effectiveRuTitle = searchRes.hits[0].movie.title_ru
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        // If still no tconst and a genuine tmdbId is present, resolve via TMDB
+        if (!effectiveTconst && tmdbId && tmdbId > 0) {
           try {
             const resolved = await triggerResolve({
               mediaType: isSeries ? "tv" : "movie",

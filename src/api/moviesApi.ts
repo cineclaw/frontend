@@ -105,6 +105,7 @@ export const moviesApi = createApi({
 
 export const {
   useSearchMoviesQuery,
+  useLazySearchMoviesQuery,
   useGetStatusQuery,
   useGetSeriesSeasonsQuery,
   useGetSeriesEpisodesQuery,

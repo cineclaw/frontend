@@ -22,6 +22,7 @@ import {
   useLazyGetShelfPageQuery,
   useLazyDiscoverCatalogQuery,
   useLazyResolveTmdbMovieQuery,
+  useLazySearchMoviesQuery,
 } from "@/api/moviesApi"
 import { useLazyGetTrackerHotlistQuery } from "@/api/torrentsApi"
 import { useIsMobile } from "@/hooks/useMediaQuery"
@@ -70,6 +71,7 @@ export function ShelfModal() {
   const [triggerGetHotlist, { isFetching: isFetchingHotlist }] = useLazyGetTrackerHotlistQuery()
   const [triggerDiscover, { isFetching: isFetchingDiscover }] = useLazyDiscoverCatalogQuery()
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
+  const [triggerSearch] = useLazySearchMoviesQuery()
 
   const isFetching = isFetchingShelf || isFetchingHotlist || isFetchingDiscover
 
@@ -268,35 +270,63 @@ export function ShelfModal() {
       return
     }
 
-    // 2. Otherwise resolve via TMDB
-    try {
-      setResolvingId(item.id)
-      const res = await triggerResolve({
-        mediaType: item.media_type,
-        tmdbId: item.id,
-      }).unwrap()
+    const isTrackerItem = Boolean(
+      item.tracker ||
+      item.seeds !== undefined ||
+      selectedShelfId?.startsWith("tracker_") ||
+      selectedShelfId === "uhd_4k"
+    )
+    setResolvingId(item.id)
 
-      if (res) {
-        dispatch(setSelectedMovie(res))
+    try {
+      // 1. First try Tantivy title search
+      const searchQuery = item.original_title || item.title
+      if (searchQuery) {
+        try {
+          const searchRes = await triggerSearch({
+            q: searchQuery,
+            type: item.media_type === "tv" ? "tvSeries" : "movie",
+          }).unwrap()
+          if (searchRes?.hits && searchRes.hits.length > 0) {
+            dispatch(setSelectedMovie(searchRes.hits[0].movie))
+            return
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 2. Only resolve via TMDB if item is from a real TMDB shelf (not synthetic tracker index)
+      if (!isTrackerItem && item.id) {
+        const res = await triggerResolve({
+          mediaType: item.media_type,
+          tmdbId: item.id,
+        }).unwrap()
+
+        if (res) {
+          dispatch(setSelectedMovie(res))
+          return
+        }
       }
     } catch (err) {
-      console.warn("Failed to resolve TMDB movie, falling back to local doc:", err)
-      const fallbackDoc: MovieDoc = {
-        tconst: `tmdb-${item.id}`,
-        title_ru: item.title,
-        title_orig: item.original_title || item.title,
-        title_primary: item.title,
-        russian_titles: [item.title],
-        year: item.year || null,
-        title_type: item.media_type === "tv" ? "tvSeries" : "movie",
-        rating: item.rating || null,
-        num_votes: item.vote_count || 0,
-        genres: [],
-      }
-      dispatch(setSelectedMovie(fallbackDoc))
+      console.warn("Failed to resolve movie, falling back to local doc:", err)
     } finally {
       setResolvingId(null)
     }
+
+    const fallbackDoc: MovieDoc = {
+      tconst: isTrackerItem ? `search-${encodeURIComponent(item.original_title || item.title)}` : `tmdb-${item.id}`,
+      title_ru: item.title,
+      title_orig: item.original_title || item.title,
+      title_primary: item.title,
+      russian_titles: [item.title],
+      year: item.year || null,
+      title_type: item.media_type === "tv" ? "tvSeries" : "movie",
+      rating: item.rating || null,
+      num_votes: item.vote_count || 0,
+      genres: [],
+    }
+    dispatch(setSelectedMovie(fallbackDoc))
   }
 
   const IconComponent = (shelfMeta?.icon && SHELF_ICONS[shelfMeta.icon]) || Film
@@ -468,7 +498,7 @@ export function ShelfModal() {
                     e.stopPropagation()
                     quickPlay({
                       tconst: item.tconst,
-                      tmdbId: item.id,
+                      tmdbId: (item.tracker || item.seeds !== undefined || selectedShelfId?.startsWith("tracker_") || selectedShelfId === "uhd_4k") ? undefined : item.id,
                       title: item.title || item.original_title || "",
                       ruTitle: item.title,
                       isSeries: item.media_type === "tv",
