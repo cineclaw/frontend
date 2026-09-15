@@ -40,6 +40,7 @@ import {
   useStopTranscodingMutation,
   useGetTorrentsQuery,
   useMountTorrentMutation,
+  useGetStreamStatsQuery,
   torrentsApi,
   type AudioTrack,
   type SubtitleTrack,
@@ -280,10 +281,26 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
   })
   const [stopTranscoding] = useStopTranscodingMutation()
   const [showExternalMenu, setShowExternalMenu] = useState<boolean>(false)
+  const [showStatsTooltip, setShowStatsTooltip] = useState<boolean>(false)
   const [copiedLink, setCopiedLink] = useState<boolean>(false)
   const [qualityToast, setQualityToast] = useState<string | null>(null)
   const [nextEpisodePrompt, setNextEpisodePrompt] = useState<boolean>(false)
   const [nextCountdown, setNextCountdown] = useState<number>(10)
+
+  // Real-time Swarm & Stream Speed Polling (every 3 seconds during playback)
+  const { data: streamStats } = useGetStreamStatsQuery(
+    {
+      hash: playerInfo?.media_source_id,
+      tconst,
+      season: currentSeason,
+      episode: currentEpisode,
+      duration: duration || playerInfo?.duration_seconds,
+    },
+    {
+      pollingInterval: isPlaying || isBuffering ? 3000 : 0,
+      skip: !tconst && !playerInfo?.media_source_id,
+    }
+  )
 
   // Network Auto-Recovery & Offline States
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
@@ -303,6 +320,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     setShowSubtitleMenu(false)
     setShowSpeedMenu(false)
     setShowExternalMenu(false)
+    setShowStatsTooltip(false)
   }, [])
 
   const closeAllMenusExcept = useCallback(
@@ -2537,6 +2555,119 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
                 <Zap className="h-4 w-4 fill-current" />
                 <span className="text-xs font-semibold hidden sm:inline">Сменить раздачу</span>
               </button>
+
+              {/* Swarm Download Speed & Cellular Signal Indicator */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowStatsTooltip(!showStatsTooltip)
+                    closeAllMenusExcept('quality') // keep tooltip isolated
+                  }}
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-full border backdrop-blur-md flex items-center gap-2 transition cursor-pointer ${
+                    (streamStats?.signal_level ?? 0) >= 3
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                      : (streamStats?.signal_level ?? 0) === 2
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+                      : (streamStats?.signal_level ?? 0) === 1
+                      ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                      : 'bg-zinc-900/70 border-white/10 text-zinc-400 hover:bg-zinc-800'
+                  }`}
+                  title="Статистика скорости и качества связи"
+                >
+                  {/* 4-bar cellular signal bars */}
+                  <div className="flex items-end gap-[2px] h-3.5 pb-0.5">
+                    {[4, 7, 10, 13].map((h, idx) => {
+                      const isLit = (idx + 1) <= (streamStats?.signal_level ?? 0)
+                      return (
+                        <div
+                          key={idx}
+                          style={{ height: `${h}px` }}
+                          className={`w-[3px] rounded-full transition-colors ${
+                            isLit
+                              ? (streamStats?.signal_level ?? 0) >= 3
+                                ? 'bg-emerald-400'
+                                : (streamStats?.signal_level ?? 0) === 2
+                                ? 'bg-amber-400'
+                                : 'bg-red-400'
+                              : 'bg-white/20'
+                          }`}
+                        />
+                      )
+                    })}
+                  </div>
+
+                  <span className="text-xs font-bold font-mono tracking-tight">
+                    {streamStats?.download_speed_fmt || '0 КБ/с'}
+                  </span>
+
+                  {(streamStats?.connected_seeders ?? 0) > 0 && (
+                    <span className="text-[11px] font-medium text-zinc-300 hidden md:inline">
+                      🌱 {streamStats?.connected_seeders}
+                    </span>
+                  )}
+                </button>
+
+                {/* Popover Tooltip for Detailed Signal / Bitrate Stats */}
+                {showStatsTooltip && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-zinc-900/95 border border-white/15 p-3.5 shadow-2xl backdrop-blur-xl z-50 flex flex-col gap-2.5 animate-fade-in text-xs"
+                  >
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                      <span className="font-semibold text-zinc-200">Сигнал потока</span>
+                      <span
+                        className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
+                          (streamStats?.signal_level ?? 0) >= 3
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : (streamStats?.signal_level ?? 0) === 2
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : (streamStats?.signal_level ?? 0) === 1
+                            ? 'bg-red-500/20 text-red-300'
+                            : 'bg-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        {streamStats?.signal_status || 'Поиск пиров'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-zinc-300">
+                      <div className="flex justify-between items-center">
+                        <span className="text-zinc-400">Скорость отдачи:</span>
+                        <span className="font-bold text-emerald-400 font-mono">
+                          {streamStats?.download_speed_fmt || '0 КБ/с'}
+                        </span>
+                      </div>
+
+                      {Boolean(streamStats?.video_bitrate_fmt) && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-zinc-400">Битрейт видео:</span>
+                          <span className="font-medium text-zinc-200 font-mono">
+                            {streamStats?.video_bitrate_fmt}
+                          </span>
+                        </div>
+                      )}
+
+                      {(streamStats?.speed_ratio ?? 0) > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-zinc-400">Запас скорости:</span>
+                          <span className="font-bold text-sky-400">
+                            {(streamStats?.speed_ratio ?? 0).toFixed(1)}x
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-zinc-400">Сиды / Пиры:</span>
+                        <span className="text-zinc-200 font-medium">
+                          🌱 {streamStats?.connected_seeders || 0} / 👥 {streamStats?.active_peers || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* External Players Dropdown */}
               <div className="relative">

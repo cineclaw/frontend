@@ -274,8 +274,38 @@ export const torrentsApi = createApi({
         { type: 'MountStatus', id: 'LIST' },
       ],
     }),
+    getStreamStats: builder.query<StreamStatsResponse, { hash?: string; tconst?: string; file_idx?: number; season?: number; episode?: number; duration?: number }>({
+      query: (params) => ({
+        url: 'api/stream/stats',
+        params,
+      }),
+      keepUnusedDataFor: 0,
+    }),
   }),
 })
+
+export interface StreamStatsResponse {
+  success: boolean
+  hash: string
+  download_speed: number
+  upload_speed: number
+  download_speed_fmt: string
+  upload_speed_fmt: string
+  connected_seeders: number
+  active_peers: number
+  total_peers: number
+  half_open_peers: number
+  loaded_size: number
+  torrent_size: number
+  preloaded_bytes: number
+  video_bitrate: number
+  video_bitrate_fmt: string
+  speed_ratio: number
+  signal_level: number // 0..4
+  signal_status: string
+  stat: number
+  stat_string: string
+}
 
 export interface SeasonProgressSummary {
   season_number: number
@@ -531,6 +561,8 @@ export const {
   useSetAudioPreferenceMutation,
   useGetSeriesProgressQuery,
   useMarkWatchedMutation,
+  useGetStreamStatsQuery,
+  useLazyGetStreamStatsQuery,
 } = torrentsApi
 
 
