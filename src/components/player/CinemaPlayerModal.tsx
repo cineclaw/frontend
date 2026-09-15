@@ -1095,26 +1095,27 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 60,
-        maxBufferLength: 30, // Optimal 30s buffer for unstable connections
-        maxMaxBufferLength: 60,
+        maxBufferLength: 120, // 2 minutes buffer lead for high-bitrate remuxes
+        maxMaxBufferLength: 300, // Up to 5 minutes buffer lead
+        maxBufferSize: 500 * 1024 * 1024, // 500 MB RAM buffer to support 30+ Mbps 1080p/4K torrents
         startPosition: targetSeekTime > 0 ? targetSeekTime : -1,
         // Aggressive buffer hole jumping & non-fatal stall recovery
         maxBufferHole: 0.5,
-        detectStallWithCurrentTimeMs: 600,
-        highBufferWatchdogPeriod: 1,
+        detectStallWithCurrentTimeMs: 1500,
+        highBufferWatchdogPeriod: 2,
         nudgeOffset: 0.15,
         nudgeMaxRetry: 10,
         nudgeOnVideoHole: true,
         skipBufferHolePadding: 0.15,
-        // Fast-fail & resilient network timeout configuration for poor connections
-        fragLoadingTimeOut: 10000,
+        // Resilient network timeouts for high-bitrate torrent chunks (e.g. 25MB+ per segment)
+        fragLoadingTimeOut: 60000,
         fragLoadingMaxRetry: 8,
         fragLoadingRetryDelay: 1000,
-        fragLoadingMaxRetryTimeout: 30000,
-        manifestLoadingTimeOut: 10000,
+        fragLoadingMaxRetryTimeout: 60000,
+        manifestLoadingTimeOut: 20000,
         manifestLoadingMaxRetry: 6,
         manifestLoadingRetryDelay: 1000,
-        levelLoadingTimeOut: 10000,
+        levelLoadingTimeOut: 20000,
         levelLoadingMaxRetry: 6,
         levelLoadingRetryDelay: 1000,
       })
