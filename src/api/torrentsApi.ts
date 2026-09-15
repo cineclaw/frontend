@@ -104,7 +104,7 @@ export const torrentsApi = createApi({
           dispatch(
             torrentsApi.util.updateQueryData(
               'getTorrents',
-              { q: arg.q, imdb_id: arg.imdb_id, limit: 100 },
+              arg,
               () => data
             )
           )

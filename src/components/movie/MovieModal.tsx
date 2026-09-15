@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Layers,
   Bookmark,
+  RefreshCw,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
@@ -42,6 +43,7 @@ import {
   useMountTorrentMutation,
   useUnmountTorrentMutation,
   useGetTorrentsQuery,
+  useForceRefreshTorrentsMutation,
   useCheckWatchlistQuery,
   useAddToWatchlistMutation,
   useRemoveFromWatchlistMutation,
@@ -134,6 +136,19 @@ export function MovieModal() {
   const [addToWatchlist, { isLoading: isAddingWatchlist }] = useAddToWatchlistMutation()
   const [removeFromWatchlist, { isLoading: isRemovingWatchlist }] = useRemoveFromWatchlistMutation()
   const isInWatchlist = Boolean(watchlistCheck?.in_watchlist)
+
+  const [forceRefreshTorrents, { isLoading: isForceRefreshing }] = useForceRefreshTorrentsMutation()
+
+  const handleRefreshTorrents = () => {
+    if (!activeMovie?.tconst) return
+    forceRefreshTorrents({
+      q: mainTitle,
+      imdb_id: activeMovie.tconst,
+      type: isSeries ? "tv" : "movie",
+      year: activeMovie.year || undefined,
+      limit: 100,
+    })
+  }
 
   const [defaultQuality] = useDefaultQuality()
   const [mountTorrent, { isLoading: isMountingMovie }] = useMountTorrentMutation()
@@ -326,6 +341,16 @@ export function MovieModal() {
 
               {/* Right Action Icons */}
               <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-cinema-850/80 rounded-xl"
+                  onClick={handleRefreshTorrents}
+                  disabled={isForceRefreshing}
+                  title="Принудительно обновить раздачи"
+                >
+                  <RefreshCw className={cn("h-4 w-4", isForceRefreshing && "animate-spin text-primary")} />
+                </Button>
                 {mountStatus?.mounted && !showConfirmUnmount && (
                   <Button
                     size="sm"
@@ -535,6 +560,18 @@ export function MovieModal() {
                         <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
                         <span>{isInWatchlist ? "В списке «Буду смотреть»" : "Буду смотреть"}</span>
                       </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshTorrents}
+                        disabled={isForceRefreshing}
+                        className="h-8 px-3 rounded-xl border border-border/80 bg-cinema-850/80 text-zinc-300 hover:bg-cinema-800 hover:text-white text-xs font-medium gap-1.5 transition-all shadow-sm"
+                        title="Принудительно пересканировать трекеры"
+                      >
+                        <RefreshCw className={cn("h-3.5 w-3.5", isForceRefreshing && "animate-spin text-primary")} />
+                        <span>{isForceRefreshing ? "Поиск..." : "Обновить"}</span>
+                      </Button>
                     </div>
                     <SeriesEpisodeBrowser
                       tconst={activeMovie.tconst}
@@ -580,6 +617,18 @@ export function MovieModal() {
                     >
                       <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
                       <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="default"
+                      onClick={handleRefreshTorrents}
+                      disabled={isForceRefreshing}
+                      className="h-11 px-3 rounded-xl border border-border/80 bg-cinema-850/90 text-zinc-300 hover:bg-cinema-800 hover:text-white text-xs font-semibold gap-1.5 transition-all shadow-sm shrink-0"
+                      title="Принудительно пересканировать трекеры"
+                    >
+                      <RefreshCw className={cn("h-4 w-4", isForceRefreshing && "animate-spin text-primary")} />
+                      <span>{isForceRefreshing ? "..." : "Обновить"}</span>
                     </Button>
                   </div>
                 )}
@@ -873,21 +922,35 @@ export function MovieModal() {
 
               {/* Actions */}
               <div className="pt-3 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleToggleWatchlist}
-                  disabled={isAddingWatchlist || isRemovingWatchlist}
-                  className={cn(
-                    "h-8 px-3 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
-                    isInWatchlist
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25"
-                      : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
-                  )}
-                >
-                  <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
-                  <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleWatchlist}
+                    disabled={isAddingWatchlist || isRemovingWatchlist}
+                    className={cn(
+                      "h-8 px-3 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
+                      isInWatchlist
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25"
+                        : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                    )}
+                  >
+                    <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
+                    <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshTorrents}
+                    disabled={isForceRefreshing}
+                    className="h-8 px-3 rounded-xl border border-border/80 bg-cinema-850/80 text-zinc-300 hover:bg-cinema-800 hover:text-white text-xs font-medium gap-1.5 transition-all shadow-sm"
+                    title="Принудительно пересканировать трекеры"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isForceRefreshing && "animate-spin text-primary")} />
+                    <span>{isForceRefreshing ? "Поиск..." : "Обновить раздачи"}</span>
+                  </Button>
+                </div>
 
                 <a
                   href={imdbUrl}

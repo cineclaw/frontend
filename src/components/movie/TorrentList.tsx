@@ -65,6 +65,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
     q: query,
     imdb_id: imdbId,
     type: isSeries ? 'tv' : 'movie',
+    year: year || undefined,
     limit: 100,
   })
 
@@ -77,6 +78,7 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
       q: query,
       imdb_id: imdbId,
       type: isSeries ? 'tv' : 'movie',
+      year: year || undefined,
       limit: 100,
     })
   }
