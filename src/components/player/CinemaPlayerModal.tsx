@@ -841,8 +841,8 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           ? audioIdx
           : info.audio_tracks?.find((a) => a.is_default)?.index ?? (info.audio_tracks?.[0]?.index ?? 0)
 
-      // Transcoded HLS via FFmpeg on-the-fly
-      if (profile && profile !== 'direct' && profile !== 'http_direct' && info.media_source_id) {
+      // Transcoded or Remuxed HLS via FFmpeg on-the-fly
+      if (profile && profile !== 'http_direct' && info.media_source_id) {
         const fileIdx = info.target_file_idx ?? 0
         const startParam = startSec > 0 ? startSec.toFixed(2) : '0'
         const totalDuration = info.duration_seconds || duration || 0
