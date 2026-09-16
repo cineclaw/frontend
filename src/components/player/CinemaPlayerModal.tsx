@@ -30,6 +30,7 @@ import {
   WifiOff,
   SignalZero,
   RefreshCw,
+  FastForward,
 } from 'lucide-react'
 import {
   useGetPlayerInfoQuery,
@@ -2119,6 +2120,26 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
     }
   }
 
+  // Active Skip Segment (Intro or Credits)
+  const activeSkipSegment = useMemo(() => {
+    const segments = playerInfo?.skip_segments
+    if (!segments || segments.length === 0) return null
+    return (
+      segments.find(
+        (s) => currentTime >= s.start_time && currentTime < s.end_time
+      ) || null
+    )
+  }, [playerInfo?.skip_segments, currentTime])
+
+  const handleSkipActiveSegment = useCallback(() => {
+    if (!activeSkipSegment) return
+    if (activeSkipSegment.type === 'credits' && playerInfo?.has_next_episode && playerInfo.next_episode) {
+      handleSelectEpisode(playerInfo.next_episode)
+    } else {
+      handleSeek(activeSkipSegment.end_time)
+    }
+  }, [activeSkipSegment, playerInfo, handleSelectEpisode, handleSeek])
+
   // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2158,6 +2179,15 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
           e.preventDefault()
           toggleMute()
           break
+        case 's':
+        case 'S':
+        case 'ы':
+        case 'Ы':
+          if (activeSkipSegment) {
+            e.preventDefault()
+            handleSkipActiveSegment()
+          }
+          break
         case 'Escape':
           e.preventDefault()
           if (showEpisodesDrawer) setShowEpisodesDrawer(false)
@@ -2172,7 +2202,7 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlay, handleSkip, handleVolumeChange, toggleFullscreen, toggleMute, volume, showEpisodesDrawer, showQualityMenu, showAudioMenu, showSubtitleMenu, showSpeedMenu, handleClosePlayer, handleUserActivity])
+  }, [togglePlay, handleSkip, handleVolumeChange, toggleFullscreen, toggleMute, volume, showEpisodesDrawer, showQualityMenu, showAudioMenu, showSubtitleMenu, showSpeedMenu, handleClosePlayer, handleUserActivity, activeSkipSegment, handleSkipActiveSegment])
 
   // Progress Bar Scrubber Calculation
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
@@ -2471,6 +2501,27 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
             className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition shrink-0"
           >
             Включить
+          </button>
+        </div>
+      )}
+
+      {/* Skip Intro / Skip Credits Floating Action Button */}
+      {activeSkipSegment && !showResumePrompt && !isSwitchingQuality && (
+        <div className="absolute bottom-24 right-6 z-40 animate-slide-up pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleSkipActiveSegment()
+            }}
+            className="group px-5 py-2.5 rounded-full bg-black/80 hover:bg-emerald-500 hover:text-black border border-white/20 hover:border-emerald-400 text-white font-bold text-xs sm:text-sm backdrop-blur-md shadow-2xl transition-all duration-200 flex items-center gap-2 active:scale-95 cursor-pointer"
+            title={`${activeSkipSegment.label} (Клавиша S)`}
+          >
+            <FastForward className="h-4 w-4 fill-current transition-transform group-hover:scale-110" />
+            <span>{activeSkipSegment.label}</span>
+            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 group-hover:bg-black/20 text-zinc-300 group-hover:text-black/80">
+              S
+            </span>
           </button>
         </div>
       )}

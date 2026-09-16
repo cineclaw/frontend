@@ -465,6 +465,14 @@ export interface PlayerInfoResponse {
   video_codec?: string
   target_file_idx?: number
   transcode_profiles?: TranscodeProfile[]
+  skip_segments?: SkipSegment[]
+}
+
+export interface SkipSegment {
+  type: 'intro' | 'credits'
+  start_time: number
+  end_time: number
+  label: string
 }
 
 export interface PlaybackStartRequest {
