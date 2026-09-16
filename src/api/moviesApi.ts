@@ -11,12 +11,15 @@ import type {
   MovieDoc,
   FeedShelf,
   DiscoverCatalogParams,
+  TrackersStatusResponse,
+  UpdateRuTrackerCookiePayload,
+  RuTrackerTestResponse,
 } from './types'
 
 export const moviesApi = createApi({
   reducerPath: 'moviesApi',
   baseQuery: baseQueryWithAuth,
-  tagTypes: ['Movies', 'Status', 'Series', 'Person', 'Feeds'],
+  tagTypes: ['Movies', 'Status', 'Series', 'Person', 'Feeds', 'Trackers'],
   endpoints: (builder) => ({
     searchMovies: builder.query<SearchResponse, SearchQueryParams>({
       query: (params) => {
@@ -100,6 +103,26 @@ export const moviesApi = createApi({
       },
       keepUnusedDataFor: 1800,
     }),
+    getTrackersStatus: builder.query<TrackersStatusResponse, void>({
+      query: () => 'api/trackers/status',
+      providesTags: ['Trackers'],
+      keepUnusedDataFor: 10,
+    }),
+    updateRuTrackerCookie: builder.mutation<RuTrackerTestResponse, UpdateRuTrackerCookiePayload>({
+      query: (body) => ({
+        url: 'api/trackers/rutracker/cookie',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Trackers'],
+    }),
+    testRuTracker: builder.mutation<RuTrackerTestResponse, void>({
+      query: () => ({
+        url: 'api/trackers/rutracker/test',
+        method: 'POST',
+      }),
+      invalidatesTags: ['Trackers'],
+    }),
   }),
 })
 
@@ -119,5 +142,9 @@ export const {
   useLazyGetShelfPageQuery,
   useDiscoverCatalogQuery,
   useLazyDiscoverCatalogQuery,
+  useGetTrackersStatusQuery,
+  useUpdateRuTrackerCookieMutation,
+  useTestRuTrackerMutation,
 } = moviesApi
+
 

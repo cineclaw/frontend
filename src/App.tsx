@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useAppSelector, useAppDispatch } from "@/store/store"
 import { useSearchMoviesQuery } from "@/api/moviesApi"
 import { Header } from "@/components/layout/Header"
@@ -10,6 +10,7 @@ import { MovieModal } from "@/components/movie/MovieModal"
 import { PersonModal } from "@/components/person/PersonModal"
 import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
+import { TrackerSettingsModal } from "@/components/settings/TrackerSettingsModal"
 import { LoginModal } from "@/components/auth/LoginModal"
 import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
 import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen } from "@/store/searchSlice"
@@ -65,6 +66,8 @@ export default function App() {
     }
   }, [debouncedQuery, data?.hits])
 
+  const [isTrackerSettingsOpen, setIsTrackerSettingsOpen] = useState(false)
+
   const handleOpenDiagnostic = () => {
     dispatch(setDiagnosticOpen(true))
   }
@@ -80,7 +83,10 @@ export default function App() {
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary">
       {/* Top Navigation Header */}
-      <Header onOpenDiagnostic={handleOpenDiagnostic} />
+      <Header
+        onOpenDiagnostic={handleOpenDiagnostic}
+        onOpenTrackerSettings={() => setIsTrackerSettingsOpen(true)}
+      />
 
       {/* Main Content Area (padding bottom comfortably clears fixed bottom dock + safe areas) */}
       <main className="flex-1 flex flex-col pb-[calc(11.5rem+env(safe-area-inset-bottom))]">
@@ -143,6 +149,12 @@ export default function App() {
       <DiagnosticModal
         isOpen={isDiagnosticOpen}
         onClose={handleCloseDiagnostic}
+      />
+
+      {/* Tracker Settings & Cookie Management Screen */}
+      <TrackerSettingsModal
+        isOpen={isTrackerSettingsOpen}
+        onClose={() => setIsTrackerSettingsOpen(false)}
       />
 
       {/* Authentication Login Screen */}

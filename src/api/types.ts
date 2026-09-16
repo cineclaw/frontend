@@ -230,5 +230,37 @@ export interface DiscoverCatalogParams {
   page?: number
 }
 
+export interface TrackerStatusItem {
+  name: string
+  enabled: boolean
+  base_url: string
+  username?: string
+  status: 'online' | 'challenge_required' | 'disabled' | 'error' | string
+  has_cookie?: boolean
+  has_cf_clearance?: boolean
+  has_session?: boolean
+  user_agent?: string
+  masked_cookie?: string
+}
+
+export interface TrackersStatusResponse {
+  rutor: TrackerStatusItem
+  nnmclub: TrackerStatusItem
+  rutracker: TrackerStatusItem
+}
+
+export interface UpdateRuTrackerCookiePayload {
+  cookie: string
+  user_agent?: string
+}
+
+export interface RuTrackerTestResponse {
+  ok: boolean
+  status_code: number
+  message: string
+  status?: TrackerStatusItem
+}
+
+
 
 

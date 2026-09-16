@@ -1,5 +1,5 @@
-import { Activity, Sparkles, LogOut, User, SlidersHorizontal, Check, ChevronDown } from "lucide-react"
-import { useGetStatusQuery } from "@/api/moviesApi"
+import { Activity, Sparkles, LogOut, User, SlidersHorizontal, Check, ChevronDown, Globe } from "lucide-react"
+import { useGetStatusQuery, useGetTrackersStatusQuery } from "@/api/moviesApi"
 import { useLogoutMutation } from "@/api/authApi"
 import { useAppDispatch, useAppSelector } from "@/store/store"
 import { logout } from "@/store/authSlice"
@@ -9,6 +9,7 @@ import { useDefaultQuality, QUALITY_OPTIONS } from "@/lib/userSettings"
 
 interface HeaderProps {
   onOpenDiagnostic?: () => void
+  onOpenTrackerSettings?: () => void
 }
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "1.0.0"
@@ -25,10 +26,15 @@ function formatDocumentCount(count?: number): { full: string; compact: string } 
   return { full, compact }
 }
 
-export function Header({ onOpenDiagnostic }: HeaderProps) {
+export function Header({ onOpenDiagnostic, onOpenTrackerSettings }: HeaderProps) {
   const dispatch = useAppDispatch()
   const { isAuthenticated, username } = useAppSelector((state) => state.auth)
   const [logoutMutation] = useLogoutMutation()
+
+  const { data: trackersStatus } = useGetTrackersStatusQuery(undefined, {
+    pollingInterval: 30000,
+  })
+
 
   const handleLogout = async () => {
     try {
@@ -125,6 +131,22 @@ export function Header({ onOpenDiagnostic }: HeaderProps) {
               </>
             )}
             <Activity className="h-3 w-3 text-muted-foreground hover:text-primary ml-0.5 sm:ml-1 shrink-0" />
+          </button>
+
+          {/* Trackers Management Trigger Button */}
+          <button
+            type="button"
+            onClick={onOpenTrackerSettings}
+            title="Управление трекерами и авторизацией"
+            className="flex items-center space-x-1.5 rounded-full border border-border/60 bg-cinema-900/90 px-2.5 sm:px-3 py-1 text-xs hover:border-primary/50 hover:bg-cinema-800 transition-all cursor-pointer focus:outline-none shadow-sm font-semibold text-zinc-300 hover:text-white"
+          >
+            <Globe className="h-3 w-3 text-primary shrink-0" />
+            <span className="hidden sm:inline">Трекеры</span>
+            {trackersStatus?.rutracker?.has_cookie && trackersStatus?.rutracker?.has_cf_clearance ? (
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50 shrink-0" />
+            ) : (
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            )}
           </button>
 
           {/* Default Quality Selector Popover */}
