@@ -350,10 +350,16 @@ export function MovieTrailers({
       {/* Horizontal swipeable cards (Edge-to-Edge) */}
       <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 pl-4 sm:-mx-6 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 no-scrollbar overscroll-x-contain">
         {videos.map((video) => {
-          const thumbUrl = `https://img.youtube.com/vi/${video.key}/mqdefault.jpg`
+          const isKinopoisk = video.site.toLowerCase() === "kinopoisk"
+          const thumbUrl = isKinopoisk
+            ? (video.thumbnail_url || "")
+            : `https://img.youtube.com/vi/${video.key}/mqdefault.jpg`
           const isTrailer =
             video.type.toLowerCase() === "trailer" ||
             video.name.toLowerCase().includes("трейлер")
+          const isDubbed =
+            video.name.toLowerCase().includes("дублир") ||
+            video.name.toLowerCase().includes("дубляж")
 
           return (
             <div
@@ -363,27 +369,39 @@ export function MovieTrailers({
             >
               {/* Thumbnail Container */}
               <div className="relative aspect-video rounded-xl overflow-hidden bg-cinema-850 border border-border/80 group-hover:border-primary/60 transition-all shadow-md">
-                <img
-                  src={thumbUrl}
-                  alt={video.name}
-                  loading="lazy"
-                  className="w-full h-full object-cover object-center group-hover:scale-104 transition-transform duration-300"
-                />
+                {thumbUrl ? (
+                  <img
+                    src={thumbUrl}
+                    alt={video.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover object-center group-hover:scale-104 transition-transform duration-300"
+                    onError={(e) => {
+                      // Fallback if thumb fails
+                      (e.target as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-cinema-850 to-cinema-950">
+                    <Film className="w-8 h-8 text-zinc-600 opacity-40" />
+                  </div>
+                )}
 
                 {/* Dark Vignette Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
 
                 {/* Center Play Button Overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-10 h-10 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:bg-red-500 transition-all duration-200">
+                  <div className={`w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-all duration-200 ${
+                    isKinopoisk ? "bg-orange-600/90 group-hover:bg-orange-500" : "bg-red-600/90 group-hover:bg-red-500"
+                  }`}>
                     <Play className="w-5 h-5 fill-current ml-0.5" />
                   </div>
                 </div>
 
-                {/* Badge (Trailer / Teaser / Official) */}
+                {/* Badge (Trailer / Teaser / Official / Dubbed) */}
                 <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/75 backdrop-blur-md text-white border border-white/10 uppercase tracking-wider">
-                    {isTrailer ? "Трейлер" : video.type}
+                    {isKinopoisk ? (isDubbed ? "Дубляж" : "Кинопоиск") : (isTrailer ? "Трейлер" : video.type)}
                   </span>
                   {video.official && (
                     <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-primary/80 text-white backdrop-blur-md">

@@ -14,6 +14,7 @@ import {
   Layers,
   Bookmark,
   RefreshCw,
+  Sparkles,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAppDispatch, useAppSelector } from "@/store/store"
@@ -29,7 +30,8 @@ import { Button } from "@/components/ui/button"
 import { MoviePoster } from "./MoviePoster"
 import { TorrentList } from "./TorrentList"
 import { SeriesEpisodeBrowser } from "./SeriesEpisodeBrowser"
-import { useDefaultQuality, selectPreferredTorrent } from "@/lib/userSettings"
+import { SeriesNotificationControl } from "./SeriesNotificationControl"
+import { useDefaultQuality, selectPreferredTorrent, useActiveProfile } from "@/lib/userSettings"
 import { getTmdbImageUrl } from "@/lib/tmdbImages"
 import {
   formatRating,
@@ -38,6 +40,23 @@ import {
   getTypeLabel,
   cn,
 } from "@/lib/utils"
+
+function formatPremiereDate(dateStr?: string | null): string | null {
+  if (!dateStr || dateStr.length < 4) return null
+  try {
+    const parts = dateStr.slice(0, 10).split("-")
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10)
+      const month = parseInt(parts[1], 10) - 1
+      const day = parseInt(parts[2], 10)
+      const date = new Date(year, month, day)
+      return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })
+    }
+  } catch {
+    // fallback
+  }
+  return dateStr
+}
 import {
   useGetMountedStatusQuery,
   useMountTorrentMutation,
@@ -129,13 +148,23 @@ export function MovieModal() {
   const isMetadataBusy = isMetadataLoading || (isMetadataFetching && !metadata)
   const [unmountTorrent, { isLoading: isUnmounting }] = useUnmountTorrentMutation()
 
+  const [activeProfile, , isKids] = useActiveProfile()
+
   const { data: watchlistCheck } = useCheckWatchlistQuery(
-    activeMovie?.tconst ?? "",
+    { imdbId: activeMovie?.tconst ?? "", profile: activeProfile },
     { skip: !activeMovie?.tconst }
   )
+  const isInWatchlist = Boolean(watchlistCheck?.in_watchlist)
+
+  // Parent convenience check: is this movie also in the kids' list?
+  const { data: kidsWatchlistCheck } = useCheckWatchlistQuery(
+    { imdbId: activeMovie?.tconst ?? "", profile: "kids" },
+    { skip: !activeMovie?.tconst || isKids }
+  )
+  const isInKidsWatchlist = Boolean(kidsWatchlistCheck?.in_watchlist)
+
   const [addToWatchlist, { isLoading: isAddingWatchlist }] = useAddToWatchlistMutation()
   const [removeFromWatchlist, { isLoading: isRemovingWatchlist }] = useRemoveFromWatchlistMutation()
-  const isInWatchlist = Boolean(watchlistCheck?.in_watchlist)
 
   const [forceRefreshTorrents, { isLoading: isForceRefreshing }] = useForceRefreshTorrentsMutation()
 
@@ -200,14 +229,38 @@ export function MovieModal() {
     )
   }
 
+  const handleToggleKidsWatchlist = async () => {
+    if (!activeMovie) return
+    const imdbId = activeMovie.tconst
+    try {
+      if (isInKidsWatchlist) {
+        await removeFromWatchlist({ imdbId, profile: "kids" }).unwrap()
+      } else {
+        await addToWatchlist({
+          imdb_id: imdbId,
+          profile: "kids",
+          media_type: isSeries ? "tv" : "movie",
+          title: mainTitle,
+          original_title: activeMovie.title_orig,
+          year: activeMovie.year || undefined,
+          rating: activeMovie.rating || undefined,
+          poster_path: metadata?.poster_path || undefined,
+        }).unwrap()
+      }
+    } catch (err) {
+      console.error("Failed to toggle kids watchlist:", err)
+    }
+  }
+
   const handleToggleWatchlist = async () => {
     if (!activeMovie) return
     try {
       if (isInWatchlist) {
-        await removeFromWatchlist(activeMovie.tconst).unwrap()
+        await removeFromWatchlist({ imdbId: activeMovie.tconst, profile: activeProfile }).unwrap()
       } else {
         await addToWatchlist({
           imdb_id: activeMovie.tconst,
+          profile: activeProfile,
           media_type: isSeries ? "tv" : "movie",
           title: mainTitle,
           original_title: activeMovie.title_orig,
@@ -429,10 +482,24 @@ export function MovieModal() {
 
                   {/* Badges Row */}
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    {metadata?.in_theaters && (
+                      <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[11px] px-2 py-0.5 font-bold shadow-sm shadow-amber-500/10">
+                        <Sparkles className="h-3 w-3 mr-1 text-amber-400 animate-pulse" />
+                        В кинотеатрах
+                      </Badge>
+                    )}
+
                     {activeMovie.rating ? (
                       <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-bold">
                         <Star className="h-3.5 w-3.5 fill-current" />
                         <span>{formatRating(activeMovie.rating)}</span>
+                      </div>
+                    ) : null}
+
+                    {metadata?.kinopoisk_rating ? (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-bold" title="Рейтинг Кинопоиск">
+                        <span className="text-[10px] text-orange-500 font-black">КП</span>
+                        <span>{metadata.kinopoisk_rating.toFixed(1)}</span>
                       </div>
                     ) : null}
 
@@ -442,6 +509,19 @@ export function MovieModal() {
                         {activeMovie.year}
                       </Badge>
                     ) : null}
+
+                    {(() => {
+                      const pDate = metadata?.premiered_ru || metadata?.premiered
+                      const formatted = formatPremiereDate(pDate)
+                      if (!formatted) return null
+                      const isRu = Boolean(metadata?.premiered_ru)
+                      return (
+                        <Badge variant="secondary" className="text-[11px] px-2 py-0.5 text-zinc-300 font-medium" title={isRu ? "Премьера в РФ" : "Мировая премьера"}>
+                          <Calendar className="h-2.5 w-2.5 mr-1 text-primary opacity-80" />
+                          {isRu ? `РФ: ${formatted}` : `Премьера: ${formatted}`}
+                        </Badge>
+                      )
+                    })()}
 
                     <Badge variant="type" className="text-[11px] px-2 py-0.5">
                       {getTypeLabel(activeMovie.title_type)}
@@ -561,6 +641,25 @@ export function MovieModal() {
                         <span>{isInWatchlist ? "В списке «Буду смотреть»" : "Буду смотреть"}</span>
                       </Button>
 
+                      {!isKids && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleToggleKidsWatchlist}
+                          disabled={isAddingWatchlist || isRemovingWatchlist}
+                          className={cn(
+                            "h-8 px-2.5 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
+                            isInKidsWatchlist
+                              ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                              : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                          )}
+                          title={isInKidsWatchlist ? "Удалить из списка детей" : "Добавить в список детей на TV"}
+                        >
+                          <span>🧸</span>
+                          <span>{isInKidsWatchlist ? "У детей ✓" : "Детям"}</span>
+                        </Button>
+                      )}
+
                       <Button
                         variant="outline"
                         size="sm"
@@ -573,6 +672,10 @@ export function MovieModal() {
                         <span>{isForceRefreshing ? "Поиск..." : "Обновить"}</span>
                       </Button>
                     </div>
+                    <SeriesNotificationControl
+                      imdbId={activeMovie.tconst}
+                      title={mainTitle}
+                    />
                     <SeriesEpisodeBrowser
                       tconst={activeMovie.tconst}
                       title={mainTitle}
@@ -618,6 +721,25 @@ export function MovieModal() {
                       <Bookmark className={cn("h-3.5 w-3.5", isInWatchlist && "fill-amber-400 text-amber-400")} />
                       <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
                     </Button>
+
+                    {!isKids && (
+                      <Button
+                        variant="outline"
+                        size="default"
+                        onClick={handleToggleKidsWatchlist}
+                        disabled={isAddingWatchlist || isRemovingWatchlist}
+                        className={cn(
+                          "h-11 px-3 rounded-xl border text-xs font-semibold gap-1.5 transition-all shadow-sm shrink-0",
+                          isInKidsWatchlist
+                            ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                            : "bg-cinema-850/90 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                        )}
+                        title={isInKidsWatchlist ? "Удалить из списка детей" : "Добавить в список детей на TV"}
+                      >
+                        <span>🧸</span>
+                        <span>{isInKidsWatchlist ? "У детей ✓" : "Детям"}</span>
+                      </Button>
+                    )}
 
                     <Button
                       variant="outline"
@@ -738,11 +860,25 @@ export function MovieModal() {
               <div>
                 {/* Badges Row */}
                 <div className="flex items-center gap-2 flex-wrap mb-2">
+                  {metadata?.in_theaters && (
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-xs px-2.5 py-1 font-bold shadow-sm shadow-amber-500/10">
+                      <Sparkles className="h-3.5 w-3.5 mr-1.5 text-amber-400 animate-pulse" />
+                      В кинотеатрах
+                    </Badge>
+                  )}
+
                   {activeMovie.rating ? (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-sm font-bold shadow-sm">
                       <Star className="h-4 w-4 fill-current" />
                       <span>{formatRating(activeMovie.rating)}</span>
                       <span className="text-zinc-500 font-normal text-xs">/ 10</span>
+                    </div>
+                  ) : null}
+
+                  {metadata?.kinopoisk_rating ? (
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-bold shadow-sm" title="Рейтинг Кинопоиск">
+                      <span className="text-[11px] text-orange-500 font-black">КП</span>
+                      <span>{metadata.kinopoisk_rating.toFixed(1)}</span>
                     </div>
                   ) : null}
 
@@ -752,6 +888,19 @@ export function MovieModal() {
                       {activeMovie.year}
                     </Badge>
                   ) : null}
+
+                  {(() => {
+                    const pDate = metadata?.premiered_ru || metadata?.premiered
+                    const formatted = formatPremiereDate(pDate)
+                    if (!formatted) return null
+                    const isRu = Boolean(metadata?.premiered_ru)
+                    return (
+                      <Badge variant="secondary" className="text-xs px-2.5 py-1 text-zinc-300 font-medium" title={isRu ? "Премьера в РФ" : "Мировая премьера"}>
+                        <Calendar className="h-3 w-3 mr-1.5 text-primary opacity-80" />
+                        {isRu ? `Премьера в РФ: ${formatted}` : `Премьера: ${formatted}`}
+                      </Badge>
+                    )
+                  })()}
 
                   <Badge variant="type" className="text-xs px-2 py-1">
                     {getTypeLabel(activeMovie.title_type)}
@@ -939,6 +1088,25 @@ export function MovieModal() {
                     <span>{isInWatchlist ? "В списке" : "Буду смотреть"}</span>
                   </Button>
 
+                  {!isKids && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleToggleKidsWatchlist}
+                      disabled={isAddingWatchlist || isRemovingWatchlist}
+                      className={cn(
+                        "h-8 px-2.5 rounded-xl border text-xs font-medium gap-1.5 transition-all shadow-sm",
+                        isInKidsWatchlist
+                          ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                          : "bg-cinema-850/80 border-border/80 text-zinc-300 hover:bg-cinema-800 hover:text-white"
+                      )}
+                      title={isInKidsWatchlist ? "Удалить из списка детей" : "Добавить в список детей на TV"}
+                    >
+                      <span>🧸</span>
+                      <span>{isInKidsWatchlist ? "У детей ✓" : "Детям"}</span>
+                    </Button>
+                  )}
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -970,14 +1138,20 @@ export function MovieModal() {
           {/* Primary Action Buttons (Смотреть / Буду смотреть or Series Browser) */}
           <div className="w-full min-w-0 pt-4 border-t border-border/50">
             {isSeries ? (
-              <SeriesEpisodeBrowser
-                tconst={activeMovie.tconst}
-                title={mainTitle}
-                ruTitle={activeMovie.title_ru || undefined}
-                year={activeMovie.year}
-                torrents={torrents}
-                isLoadingTorrents={isLoadingTorrents || isFetchingTorrents}
-              />
+              <div className="space-y-3">
+                <SeriesNotificationControl
+                  imdbId={activeMovie.tconst}
+                  title={mainTitle}
+                />
+                <SeriesEpisodeBrowser
+                  tconst={activeMovie.tconst}
+                  title={mainTitle}
+                  ruTitle={activeMovie.title_ru || undefined}
+                  year={activeMovie.year}
+                  torrents={torrents}
+                  isLoadingTorrents={isLoadingTorrents || isFetchingTorrents}
+                />
+              </div>
             ) : (
               <div className="flex items-center gap-3">
                 <button

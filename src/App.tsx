@@ -12,8 +12,9 @@ import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
 import { TrackerSettingsModal } from "@/components/settings/TrackerSettingsModal"
 import { LoginModal } from "@/components/auth/LoginModal"
+import { PairModal } from "@/components/auth/PairModal"
 import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
-import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen } from "@/store/searchSlice"
+import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen, setPairingOpen } from "@/store/searchSlice"
 import { useAppRouting } from "@/hooks/useAppRouting"
 
 export default function App() {
@@ -27,6 +28,8 @@ export default function App() {
     isFiltersOpen,
     activePlayer,
     isDiagnosticOpen,
+    isPairingOpen,
+    pairingCode,
   } = useAppSelector((state) => state.search)
 
   const {
@@ -157,8 +160,22 @@ export default function App() {
         onClose={() => setIsTrackerSettingsOpen(false)}
       />
 
+      {/* TV & Living Room Device Pairing Modal */}
+      <PairModal
+        isOpen={isPairingOpen}
+        initialCode={pairingCode || ""}
+        onClose={() => {
+          dispatch(setPairingOpen(false))
+          if (window.history.state?.hasInAppHistory) {
+            window.history.back()
+          } else {
+            window.history.pushState({}, '', '/')
+          }
+        }}
+      />
+
       {/* Authentication Login Screen */}
-      <LoginModal isOpen={!isAuthenticated} />
+      <LoginModal isOpen={!isAuthenticated && !isPairingOpen} />
 
       {/* Embedded Cinema Video Player Modal (Global Root Portal) */}
       {activePlayer && (

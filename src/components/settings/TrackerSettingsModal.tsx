@@ -22,11 +22,13 @@ import {
   Laptop,
   Flame,
   Info,
+  Sparkles,
 } from "lucide-react"
 import {
   useGetTrackersStatusQuery,
   useUpdateRuTrackerCookieMutation,
   useTestRuTrackerMutation,
+  useSolveRuTrackerMutation,
 } from "@/api/moviesApi"
 
 interface TrackerSettingsModalProps {
@@ -42,6 +44,7 @@ export function TrackerSettingsModal({ isOpen, onClose }: TrackerSettingsModalPr
 
   const [updateCookie, { isLoading: isUpdating }] = useUpdateRuTrackerCookieMutation()
   const [testRuTracker, { isLoading: isTesting }] = useTestRuTrackerMutation()
+  const [solveRuTracker, { isLoading: isSolving }] = useSolveRuTrackerMutation()
 
   const [cookieInput, setCookieInput] = useState("")
   const [userAgentInput, setUserAgentInput] = useState("")
@@ -129,6 +132,29 @@ export function TrackerSettingsModal({ isOpen, onClose }: TrackerSettingsModalPr
       setTestResult({
         type: "error",
         message: err?.data?.message || err?.message || "Ошибка при проверке подключения",
+      })
+    }
+  }
+
+  const handleSolveFlareSolverr = async () => {
+    setTestResult(null)
+    try {
+      const res = await solveRuTracker().unwrap()
+      if (res.ok) {
+        setTestResult({
+          type: "success",
+          message: res.message || "Cloudflare Turnstile успешно решен через FlareSolverr! RuTracker активен.",
+        })
+      } else {
+        setTestResult({
+          type: "error",
+          message: res.message || "Не удалось решить капчу через FlareSolverr",
+        })
+      }
+    } catch (err: any) {
+      setTestResult({
+        type: "error",
+        message: err?.data?.message || err?.message || "Ошибка подключения к FlareSolverr",
       })
     }
   }
@@ -238,27 +264,40 @@ export function TrackerSettingsModal({ isOpen, onClose }: TrackerSettingsModalPr
 
           {/* RuTracker Cookie Setup Section */}
           <div className="rounded-2xl border border-border/70 bg-cinema-900/50 p-4 sm:p-5 space-y-4">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div>
                 <h3 className="font-bold text-sm sm:text-base text-zinc-100 flex items-center gap-2">
                   <Cookie className="h-4 w-4 text-primary" />
                   Авторизация и Cloudflare Cookie для RuTracker
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Для обхода защиты Cloudflare Turnstile вставьте строку Cookie из вашего браузера (живет от 1 до 3 месяцев).
+                  Обход защиты Cloudflare Turnstile поддерживается автоматически через FlareSolverr, либо вручную через строку Cookie.
                 </p>
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRunTest}
-                disabled={isTesting || isUpdating}
-                className="h-8 px-3 rounded-lg border-border/70 bg-cinema-800 hover:bg-cinema-700 text-xs shrink-0"
-              >
-                <RefreshCw className={`h-3 w-3 mr-1.5 ${isTesting ? "animate-spin" : ""}`} />
-                Проверить связь
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleSolveFlareSolverr}
+                  disabled={isSolving || isTesting || isUpdating}
+                  className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-900/30"
+                >
+                  <Sparkles className={`h-3 w-3 mr-1.5 ${isSolving ? "animate-spin" : ""}`} />
+                  {isSolving ? "Решаем Turnstile..." : "Получить через FlareSolverr"}
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRunTest}
+                  disabled={isSolving || isTesting || isUpdating}
+                  className="h-8 px-3 rounded-lg border-border/70 bg-cinema-800 hover:bg-cinema-700 text-xs shrink-0"
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1.5 ${isTesting ? "animate-spin" : ""}`} />
+                  Проверить связь
+                </Button>
+              </div>
             </div>
 
             {/* Current Status Info */}

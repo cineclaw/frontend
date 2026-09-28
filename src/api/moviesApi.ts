@@ -14,6 +14,7 @@ import type {
   TrackersStatusResponse,
   UpdateRuTrackerCookiePayload,
   RuTrackerTestResponse,
+  TrailerStreamResponse,
 } from './types'
 
 export const moviesApi = createApi({
@@ -62,6 +63,10 @@ export const moviesApi = createApi({
       providesTags: (_result, _error, tconst) => [{ type: 'Movies', id: `meta-${tconst}` }],
       keepUnusedDataFor: 600, // 10 min cache
     }),
+    getTrailerStream: builder.query<TrailerStreamResponse, string>({
+      query: (trailerId) => `api/trailer/${encodeURIComponent(trailerId)}/stream`,
+      keepUnusedDataFor: 3600, // 1 hour cache
+    }),
     getPersonDetails: builder.query<PersonDetailsResponse, number>({
       query: (personId) => `api/person/${personId}`,
       providesTags: (_result, _error, personId) => [{ type: 'Person', id: personId }],
@@ -71,8 +76,13 @@ export const moviesApi = createApi({
       query: ({ mediaType, tmdbId }) => `api/tmdb/${mediaType}/${tmdbId}/movie`,
       keepUnusedDataFor: 600,
     }),
-    getHomeFeeds: builder.query<FeedShelf[], void>({
-      query: () => 'api/feeds',
+    getHomeFeeds: builder.query<FeedShelf[], { profile?: string } | void>({
+      query: (arg) => {
+        if (arg && arg.profile) {
+          return `api/feeds?profile=${encodeURIComponent(arg.profile)}`
+        }
+        return 'api/feeds'
+      },
       providesTags: ['Feeds'],
       keepUnusedDataFor: 1800, // 30 min cache
     }),
@@ -123,6 +133,13 @@ export const moviesApi = createApi({
       }),
       invalidatesTags: ['Trackers'],
     }),
+    solveRuTracker: builder.mutation<RuTrackerTestResponse, void>({
+      query: () => ({
+        url: 'api/trackers/rutracker/solve',
+        method: 'POST',
+      }),
+      invalidatesTags: ['Trackers'],
+    }),
   }),
 })
 
@@ -134,6 +151,7 @@ export const {
   useGetSeriesEpisodesQuery,
   useLazyGetSeriesEpisodesQuery,
   useGetMovieMetadataQuery,
+  useGetTrailerStreamQuery,
   useGetPersonDetailsQuery,
   useResolveTmdbMovieQuery,
   useLazyResolveTmdbMovieQuery,
@@ -145,6 +163,7 @@ export const {
   useGetTrackersStatusQuery,
   useUpdateRuTrackerCookieMutation,
   useTestRuTrackerMutation,
+  useSolveRuTrackerMutation,
 } = moviesApi
 
 

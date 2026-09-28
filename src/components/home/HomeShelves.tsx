@@ -21,15 +21,17 @@ import { CatalogTilesGrid } from "./CatalogTilesGrid"
 import { ContinueWatchingShelf } from "./ContinueWatchingShelf"
 import { WatchlistShelf } from "./WatchlistShelf"
 import { getTmdbImageUrl } from "@/lib/tmdbImages"
+import { useActiveProfile } from "@/lib/userSettings"
 import type { FeedItem, MovieDoc } from "@/api/types"
 
 export function HomeShelves() {
   const dispatch = useAppDispatch()
   const { isAuthenticated } = useAppSelector((state) => state.auth)
   const selectedMediaType = useAppSelector((state) => state.search.selectedMediaType)
+  const [activeProfile, , isKids] = useActiveProfile()
 
-  // Fetch only lightweight home feeds
-  const { data: shelves } = useGetHomeFeedsQuery(undefined, {
+  // Fetch only lightweight home feeds matching active profile
+  const { data: shelves } = useGetHomeFeedsQuery({ profile: activeProfile }, {
     skip: !isAuthenticated,
   })
   const [triggerResolve] = useLazyResolveTmdbMovieQuery()
@@ -124,6 +126,19 @@ export function HomeShelves() {
 
   return (
     <div className="space-y-7 pt-1 pb-8 w-full text-left">
+      {/* Kids Mode Active Banner */}
+      {isKids && (
+        <div className="mx-4 sm:mx-6 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-pink-500/15 to-purple-500/15 border border-amber-500/30 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🧸</span>
+            <div>
+              <div className="text-sm font-bold text-amber-300">Детский режим активен</div>
+              <div className="text-xs text-zinc-400">Мультфильмы, сказки, Disney, Pixar и любимые мультсериалы</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Continue Watching Shelf (TorrServer SQLite Resume Integration) */}
       <ContinueWatchingShelf />
 

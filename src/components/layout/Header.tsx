@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from "@/store/store"
 import { logout } from "@/store/authSlice"
 import { Badge } from "@/components/ui/badge"
 import { useState, useRef, useEffect } from "react"
-import { useDefaultQuality, QUALITY_OPTIONS } from "@/lib/userSettings"
+import { useDefaultQuality, QUALITY_OPTIONS, useActiveProfile } from "@/lib/userSettings"
 
 interface HeaderProps {
   onOpenDiagnostic?: () => void
@@ -35,7 +35,6 @@ export function Header({ onOpenDiagnostic, onOpenTrackerSettings }: HeaderProps)
     pollingInterval: 30000,
   })
 
-
   const handleLogout = async () => {
     try {
       await logoutMutation().unwrap()
@@ -47,19 +46,26 @@ export function Header({ onOpenDiagnostic, onOpenTrackerSettings }: HeaderProps)
   const [isQualityOpen, setIsQualityOpen] = useState(false)
   const qualityMenuRef = useRef<HTMLDivElement>(null)
 
+  const [, setActiveProfile, isKids] = useActiveProfile()
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (qualityMenuRef.current && !qualityMenuRef.current.contains(e.target as Node)) {
         setIsQualityOpen(false)
       }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setIsProfileOpen(false)
+      }
     }
-    if (isQualityOpen) {
+    if (isQualityOpen || isProfileOpen) {
       document.addEventListener("mousedown", handleClickOutside)
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [isQualityOpen])
+  }, [isQualityOpen, isProfileOpen])
 
   const { data: status, isError, isLoading } = useGetStatusQuery(undefined, {
     pollingInterval: 15000,
@@ -199,6 +205,80 @@ export function Header({ onOpenDiagnostic, onOpenTrackerSettings }: HeaderProps)
                     </button>
                   )
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* Active Profile Selector Popover */}
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsProfileOpen((prev) => !prev)}
+              title="Переключить профиль (Родитель / Дети)"
+              className={`flex items-center space-x-1 sm:space-x-1.5 rounded-full border px-2 sm:px-3 py-1 text-xs transition-all cursor-pointer focus:outline-none shadow-sm font-semibold ${
+                isKids
+                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
+                  : "border-border/60 bg-cinema-900/90 text-zinc-300 hover:border-primary/50 hover:text-white"
+              }`}
+            >
+              <span>{isKids ? "🧸" : "👤"}</span>
+              <span className="hidden sm:inline">
+                {isKids ? "Детский" : "Основной"}
+              </span>
+              <ChevronDown
+                className={`h-3 w-3 text-zinc-400 transition-transform duration-200 shrink-0 ${
+                  isProfileOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {isProfileOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-cinema-900/95 border border-border/80 p-1.5 shadow-2xl backdrop-blur-2xl z-50 animate-in fade-in zoom-in-95">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 border-b border-white/5 mb-1">
+                  Профиль
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveProfile("default")
+                    setIsProfileOpen(false)
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    !isKids
+                      ? "bg-primary/15 text-primary font-bold"
+                      : "text-zinc-300 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>👤</span>
+                    <div className="flex flex-col text-left">
+                      <span>Основной</span>
+                      <span className="text-[10px] text-zinc-500 font-normal">Родительский профиль</span>
+                    </div>
+                  </div>
+                  {!isKids && <Check className="h-4 w-4 text-primary ml-2 shrink-0" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveProfile("kids")
+                    setIsProfileOpen(false)
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    isKids
+                      ? "bg-amber-500/15 text-amber-300 font-bold"
+                      : "text-zinc-300 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>🧸</span>
+                    <div className="flex flex-col text-left">
+                      <span>Детский</span>
+                      <span className="text-[10px] text-zinc-500 font-normal">5–8 лет (Мультфильмы)</span>
+                    </div>
+                  </div>
+                  {isKids && <Check className="h-4 w-4 text-amber-400 ml-2 shrink-0" />}
+                </button>
               </div>
             )}
           </div>

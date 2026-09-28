@@ -135,6 +135,14 @@ export interface VideoItem {
   type: string
   official: boolean
   published_at?: string | null
+  stream_url?: string | null
+  thumbnail_url?: string | null
+}
+
+export interface TrailerStreamResponse {
+  trailer_id: string
+  stream_url: string
+  thumbnail_url?: string | null
 }
 
 export interface MovieMetadataResponse {
@@ -144,6 +152,11 @@ export interface MovieMetadataResponse {
   original_title: string
   overview?: string | null
   premiered?: string | null
+  premiered_ru?: string | null
+  digital_release?: string | null
+  in_theaters?: boolean
+  kinopoisk_id?: number | null
+  kinopoisk_rating?: number | null
   year?: number | null
   rating?: number | null
   genres: string[]

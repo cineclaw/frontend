@@ -115,3 +115,46 @@ export function selectPreferredTorrent(
 
   return best || torrents[0] || null
 }
+
+const PROFILE_STORAGE_KEY = "cineclaw_active_profile"
+const PROFILE_EVENT_NAME = "cineclaw_profile_changed"
+
+export function getActiveProfile(): string {
+  if (typeof window === "undefined") return "default"
+  return localStorage.getItem(PROFILE_STORAGE_KEY) || "default"
+}
+
+export function setActiveProfile(profileId: string): void {
+  if (typeof window === "undefined") return
+  localStorage.setItem(PROFILE_STORAGE_KEY, profileId)
+  window.dispatchEvent(new CustomEvent(PROFILE_EVENT_NAME, { detail: profileId }))
+}
+
+export function useActiveProfile(): [string, (p: string) => void, boolean] {
+  const [profile, setProfileState] = useState<string>(getActiveProfile)
+
+  useEffect(() => {
+    const handleProfileChange = (e: Event) => {
+      const customEvent = e as CustomEvent<string>
+      setProfileState(customEvent.detail || getActiveProfile())
+    }
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === PROFILE_STORAGE_KEY) {
+        setProfileState(getActiveProfile())
+      }
+    }
+    window.addEventListener(PROFILE_EVENT_NAME, handleProfileChange)
+    window.addEventListener("storage", handleStorage)
+    return () => {
+      window.removeEventListener(PROFILE_EVENT_NAME, handleProfileChange)
+      window.removeEventListener("storage", handleStorage)
+    }
+  }, [])
+
+  const setProfile = useCallback((newProfile: string) => {
+    setActiveProfile(newProfile)
+    setProfileState(newProfile)
+  }, [])
+
+  return [profile, setProfile, profile === "kids"]
+}

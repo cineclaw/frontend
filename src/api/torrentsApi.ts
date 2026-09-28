@@ -50,7 +50,7 @@ export interface TorrentsQueryParams {
 export const torrentsApi = createApi({
   reducerPath: 'torrentsApi',
   baseQuery: baseQueryWithAuth,
-  tagTypes: ['Torrents', 'MountStatus', 'Watchlist'],
+  tagTypes: ['Torrents', 'MountStatus', 'Watchlist', 'Profiles', 'SeriesSubscription'],
   endpoints: (builder) => ({
     getTorrents: builder.query<TorrentResult[], TorrentsQueryParams>({
       query: (params) => {
@@ -206,35 +206,82 @@ export const torrentsApi = createApi({
       }),
       invalidatesTags: () => [{ type: 'MountStatus', id: 'ResumeList' }],
     }),
-    getWatchlist: builder.query<WatchlistItem[], void>({
-      query: () => 'api/watchlist',
-      providesTags: () => [{ type: 'Watchlist', id: 'LIST' }],
+    getWatchlist: builder.query<WatchlistItem[], { profile?: string } | void>({
+      query: (arg) => {
+        if (arg && arg.profile) {
+          return `api/watchlist?profile=${encodeURIComponent(arg.profile)}`
+        }
+        return 'api/watchlist'
+      },
+      providesTags: (_res, _err, arg) => [{ type: 'Watchlist', id: (arg && arg.profile) ? arg.profile : 'LIST' }],
       keepUnusedDataFor: 30,
     }),
-    addToWatchlist: builder.mutation<{ success: boolean }, Partial<WatchlistItem>>({
-      query: (body) => ({
-        url: 'api/watchlist',
-        method: 'POST',
-        body,
-      }),
+    addToWatchlist: builder.mutation<{ success: boolean }, Partial<WatchlistItem> & { profile?: string }>({
+      query: (body) => {
+        const url = body.profile ? `api/watchlist?profile=${encodeURIComponent(body.profile)}` : 'api/watchlist'
+        return {
+          url,
+          method: 'POST',
+          body,
+        }
+      },
       invalidatesTags: (_res, _err, arg) => [
         { type: 'Watchlist', id: 'LIST' },
+        { type: 'Watchlist', id: arg.profile || 'default' },
         { type: 'Watchlist', id: arg.imdb_id },
       ],
     }),
-    removeFromWatchlist: builder.mutation<{ success: boolean }, string>({
-      query: (imdbId) => ({
-        url: `api/watchlist?imdb_id=${encodeURIComponent(imdbId)}`,
+    removeFromWatchlist: builder.mutation<{ success: boolean }, { imdbId: string; profile?: string } | string>({
+      query: (arg) => {
+        const imdbId = typeof arg === 'string' ? arg : arg.imdbId
+        const profile = typeof arg === 'string' ? undefined : arg.profile
+        const url = `api/watchlist?imdb_id=${encodeURIComponent(imdbId)}${profile ? `&profile=${encodeURIComponent(profile)}` : ''}`
+        return {
+          url,
+          method: 'DELETE',
+        }
+      },
+      invalidatesTags: (_res, _err, arg) => {
+        const imdbId = typeof arg === 'string' ? arg : arg.imdbId
+        const profile = typeof arg === 'string' ? undefined : arg.profile
+        return [
+          { type: 'Watchlist', id: 'LIST' },
+          { type: 'Watchlist', id: profile || 'default' },
+          { type: 'Watchlist', id: imdbId },
+        ]
+      },
+    }),
+    checkWatchlist: builder.query<{ in_watchlist: boolean }, { imdbId: string; profile?: string } | string>({
+      query: (arg) => {
+        const imdbId = typeof arg === 'string' ? arg : arg.imdbId
+        const profile = typeof arg === 'string' ? undefined : arg.profile
+        return `api/watchlist/check?imdb_id=${encodeURIComponent(imdbId)}${profile ? `&profile=${encodeURIComponent(profile)}` : ''}`
+      },
+      providesTags: (_res, _err, arg) => {
+        const imdbId = typeof arg === 'string' ? arg : arg.imdbId
+        const profile = typeof arg === 'string' ? '' : `-${arg.profile}`
+        return [{ type: 'Watchlist', id: `${imdbId}${profile}` }]
+      },
+    }),
+    getProfiles: builder.query<UserProfile[], void>({
+      query: () => 'api/profiles',
+      providesTags: ['Profiles'],
+      keepUnusedDataFor: 60,
+    }),
+    createProfile: builder.mutation<UserProfile, { name: string; icon?: string; is_kids?: boolean }>({
+      query: (body) => ({
+        url: 'api/profiles',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Profiles'],
+    }),
+    deleteProfile: builder.mutation<{ status: string }, string>({
+      query: (id) => ({
+        url: `api/profiles/${encodeURIComponent(id)}`,
         method: 'DELETE',
       }),
-      invalidatesTags: (_res, _err, arg) => [
-        { type: 'Watchlist', id: 'LIST' },
-        { type: 'Watchlist', id: arg },
-      ],
-    }),
-    checkWatchlist: builder.query<{ in_watchlist: boolean }, string>({
-      query: (imdbId) => `api/watchlist/check?imdb_id=${encodeURIComponent(imdbId)}`,
-      providesTags: (_res, _err, id) => [{ type: 'Watchlist', id }],
+      invalidatesTags: ['Profiles'],
     }),
     getTranscodeProfiles: builder.query<TranscodeProfile[], void>({
       query: () => 'api/stream/transcode/profiles',
@@ -280,6 +327,61 @@ export const torrentsApi = createApi({
         params,
       }),
       keepUnusedDataFor: 0,
+    }),
+    getVapidKey: builder.query<{ public_key: string }, void>({
+      query: () => 'api/notifications/vapid-key',
+      keepUnusedDataFor: 3600,
+    }),
+    subscribePush: builder.mutation<{ success: boolean }, { endpoint: string; p256dh: string; auth: string; user_agent?: string; profile?: string }>({
+      query: (body) => ({
+        url: 'api/notifications/subscribe',
+        method: 'POST',
+        body,
+      }),
+    }),
+    unsubscribePush: builder.mutation<{ success: boolean }, { endpoint: string }>({
+      query: (body) => ({
+        url: 'api/notifications/unsubscribe',
+        method: 'POST',
+        body,
+      }),
+    }),
+    sendTestNotification: builder.mutation<{ success: boolean; sent_count: number }, { title?: string; body?: string; profile?: string }>({
+      query: (body) => ({
+        url: 'api/notifications/test',
+        method: 'POST',
+        body,
+      }),
+    }),
+    getSeriesSubscription: builder.query<SeriesSubscription, { imdb_id: string; profile?: string }>({
+      query: ({ imdb_id, profile }) => {
+        const params: Record<string, string> = { imdb_id }
+        if (profile) params.profile = profile
+        return {
+          url: 'api/notifications/series/subscription',
+          params,
+        }
+      },
+      providesTags: (_res, _err, arg) => [{ type: 'SeriesSubscription', id: arg.imdb_id }],
+    }),
+    setSeriesSubscription: builder.mutation<{ success: boolean }, SeriesSubscription>({
+      query: (body) => ({
+        url: 'api/notifications/series/subscription',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, arg) => [{ type: 'SeriesSubscription', id: arg.imdb_id }],
+    }),
+    getSeriesStudios: builder.query<{ studios: string[] }, void>({
+      query: () => 'api/notifications/series/studios',
+      keepUnusedDataFor: 3600,
+    }),
+    triggerCheckSeries: builder.mutation<{ success: boolean; detected_count: number }, { imdb_id?: string }>({
+      query: (params) => ({
+        url: 'api/notifications/series/check-now',
+        method: 'POST',
+        params,
+      }),
     }),
   }),
 })
@@ -543,6 +645,26 @@ export interface WatchlistItem {
   added_at: string
 }
 
+export interface UserProfile {
+  id: string
+  name: string
+  is_kids: boolean
+  icon: string
+  created_at?: string
+}
+
+export interface SeriesSubscription {
+  id?: number
+  imdb_id: string
+  profile?: string
+  preferred_studio?: string
+  last_notified_season?: number
+  last_notified_episode?: number
+  preferred_studio_notified?: boolean
+  is_active: boolean
+  updated_at?: string
+}
+
 export const {
   useGetTorrentsQuery,
   useLazyGetTorrentsQuery,
@@ -564,6 +686,9 @@ export const {
   useAddToWatchlistMutation,
   useRemoveFromWatchlistMutation,
   useCheckWatchlistQuery,
+  useGetProfilesQuery,
+  useCreateProfileMutation,
+  useDeleteProfileMutation,
   useGetTranscodeProfilesQuery,
   useStopTranscodingMutation,
   useSetAudioPreferenceMutation,
@@ -571,6 +696,14 @@ export const {
   useMarkWatchedMutation,
   useGetStreamStatsQuery,
   useLazyGetStreamStatsQuery,
+  useGetVapidKeyQuery,
+  useSubscribePushMutation,
+  useUnsubscribePushMutation,
+  useSendTestNotificationMutation,
+  useGetSeriesSubscriptionQuery,
+  useSetSeriesSubscriptionMutation,
+  useGetSeriesStudiosQuery,
+  useTriggerCheckSeriesMutation,
 } = torrentsApi
 
 
