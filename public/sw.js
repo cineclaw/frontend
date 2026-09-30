@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cineclaw-v1.0.0';
+const CACHE_NAME = 'cineclaw-v1.3.1';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',

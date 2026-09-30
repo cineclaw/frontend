@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BellRing, BellOff, Check, Loader2, Sparkles } from 'lucide-react'
+import { BellRing, BellOff, Check, Loader2, Sparkles, Send, Share, AlertTriangle } from 'lucide-react'
 import {
   useGetSeriesSubscriptionQuery,
   useSetSeriesSubscriptionMutation,
@@ -30,11 +30,20 @@ export function SeriesNotificationControl({
   const { data: studiosData } = useGetSeriesStudiosQuery()
   const [setSubscription, { isLoading: isUpdating }] = useSetSeriesSubscriptionMutation()
 
-  const { isSupported, permission, isSubscribed, subscribe } = useWebPush()
+  const {
+    needsHomeScreenInstall,
+    permission,
+    isSubscribed,
+    isLoading: isLoadingPush,
+    subscribe,
+    sendTest,
+  } = useWebPush()
 
   const [isActive, setIsActive] = useState<boolean>(true)
   const [selectedStudio, setSelectedStudio] = useState<string>('')
   const [showSavedFeedback, setShowSavedFeedback] = useState<boolean>(false)
+  const [testSent, setTestSent] = useState<boolean>(false)
+  const [isSendingTest, setIsSendingTest] = useState<boolean>(false)
 
   useEffect(() => {
     if (sub) {
@@ -46,17 +55,13 @@ export function SeriesNotificationControl({
   }, [sub])
 
   const handleToggleActive = async () => {
-    // If enabling and push is not subscribed or permission default, request permission first
-    if (!isActive && isSupported && (!isSubscribed || permission !== 'granted')) {
-      const ok = await subscribe()
-      if (!ok && permission === 'denied') {
-        alert('Пожалуйста, разрешите уведомления в настройках браузера для получения оповещений о новых сериях.')
-        return
-      }
-    }
-
     const nextActive = !isActive
     setIsActive(nextActive)
+
+    // If user is turning notifications ON and device is not yet subscribed, prompt to subscribe device!
+    if (nextActive && (!isSubscribed || permission !== 'granted') && !needsHomeScreenInstall) {
+      await subscribe()
+    }
 
     try {
       await setSubscription({
@@ -93,6 +98,25 @@ export function SeriesNotificationControl({
     }
   }
 
+  const handleSubscribeDevice = async () => {
+    const ok = await subscribe()
+    if (ok) {
+      setTimeout(() => {
+        sendTest()
+      }, 500)
+    }
+  }
+
+  const handleSendTest = async () => {
+    setIsSendingTest(true)
+    const ok = await sendTest()
+    setIsSendingTest(false)
+    if (ok) {
+      setTestSent(true)
+      setTimeout(() => setTestSent(false), 3000)
+    }
+  }
+
   const studios = studiosData?.studios || [
     'Red Head Sound',
     'Кубик в Кубе',
@@ -108,18 +132,19 @@ export function SeriesNotificationControl({
   return (
     <div
       className={cn(
-        'rounded-xl border border-border/80 bg-cinema-900/60 p-2.5 transition-all text-xs space-y-2',
+        'rounded-2xl border border-border/80 bg-cinema-900/60 p-3 transition-all text-xs space-y-2.5 shadow-sm',
         isActive ? 'border-primary/40 bg-primary/5' : 'opacity-85',
         className
       )}
     >
+      {/* 1. Main Series Tracking Toggle */}
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={handleToggleActive}
           disabled={isLoadingSub || isUpdating}
           className={cn(
-            'flex items-center gap-2 font-medium transition-colors cursor-pointer select-none text-left',
+            'flex items-center gap-2.5 font-medium transition-colors cursor-pointer select-none text-left',
             isActive ? 'text-primary hover:text-primary/80' : 'text-zinc-400 hover:text-zinc-300'
           )}
         >
@@ -132,20 +157,24 @@ export function SeriesNotificationControl({
           )}
 
           <div className="leading-tight">
-            <span className="font-semibold block">
-              {isActive ? (title ? `«${title}»: уведомления включены` : 'Уведомления о новых сериях включены') : 'Уведомлять о выходе новых серий'}
+            <span className="font-semibold text-xs block text-white">
+              {isActive
+                ? title
+                  ? `«${title}»: отслеживание включено`
+                  : 'Отслеживание сериала включено'
+                : 'Отслеживать выход новых серий'}
             </span>
-            <span className="text-[10px] text-zinc-400 block font-normal">
+            <span className="text-[10px] text-zinc-400 block font-normal mt-0.5">
               {isActive
                 ? selectedStudio && selectedStudio !== 'любая'
-                  ? `Сразу при релизе + в озвучке ${selectedStudio}`
+                  ? `Сразу при релизе + повторно в озвучке ${selectedStudio}`
                   : 'Сразу при появлении первой русской озвучки'
-                : 'Нажмите, чтобы включить PWA Push'}
+                : 'Нажмите для включения мониторинга новых серий'}
             </span>
           </div>
         </button>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {showSavedFeedback && (
             <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-0.5 animate-fade-in">
               <Check className="w-3 h-3" /> Сохранено
@@ -159,7 +188,7 @@ export function SeriesNotificationControl({
               'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
               isActive ? 'bg-primary' : 'bg-cinema-700'
             )}
-            title={isActive ? 'Отключить уведомления' : 'Включить уведомления'}
+            title={isActive ? 'Отключить отслеживание' : 'Включить отслеживание'}
           >
             <span
               className={cn(
@@ -171,27 +200,99 @@ export function SeriesNotificationControl({
         </div>
       </div>
 
+      {/* 2. Device Push Status Callout (CRITICAL: alerts user if device hasn't allowed push yet!) */}
       {isActive && (
-        <div className="pt-1 border-t border-border/40 flex flex-wrap items-center gap-2">
-          <label className="text-[11px] text-zinc-400 flex items-center gap-1 shrink-0 font-medium">
-            <Sparkles className="w-3 h-3 text-amber-400" />
-            <span>Приоритетная озвучка:</span>
-          </label>
+        <>
+          {needsHomeScreenInstall ? (
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px] space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold text-amber-400">
+                <Share className="w-3.5 h-3.5" />
+                <span>Для пушей на iOS: добавьте на экран «Домой»</span>
+              </div>
+              <p className="text-[10px] text-zinc-300 leading-tight">
+                Нажмите «Поделиться» внизу экрана ➔ «На экран «Домой»», чтобы получать пуши при закрытом приложении.
+              </p>
+            </div>
+          ) : permission === 'denied' ? (
+            <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/25 text-red-200 text-[11px] flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <div className="leading-tight text-[10px]">
+                <span className="font-semibold block text-red-300">Уведомления заблокированы</span>
+                <span>Разрешите уведомления в настройках браузера для этого сайта.</span>
+              </div>
+            </div>
+          ) : !isSubscribed ? (
+            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-amber-400 shrink-0 animate-bounce" />
+                <div className="leading-tight">
+                  <span className="font-semibold block text-xs text-amber-300">
+                    Устройство не подключено к пушам
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    Разрешите браузеру отправку уведомлений
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleSubscribeDevice}
+                disabled={isLoadingPush}
+                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 text-black font-extrabold text-[11px] shadow-sm transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                {isLoadingPush ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  'Включить'
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 px-1 pt-0.5">
+              <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Это устройство подключено к Web Push</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleSendTest}
+                disabled={isSendingTest}
+                className="text-[10px] text-primary hover:underline cursor-pointer flex items-center gap-1 font-medium"
+              >
+                {isSendingTest ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : testSent ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
+                <span>{testSent ? 'Доставлено!' : 'Тест'}</span>
+              </button>
+            </div>
+          )}
 
-          <select
-            value={selectedStudio}
-            onChange={handleStudioChange}
-            disabled={isUpdating}
-            className="flex-1 min-w-[130px] h-7 px-2 rounded-lg bg-cinema-800 border border-border/70 text-zinc-200 text-xs focus:outline-none focus:border-primary cursor-pointer"
-          >
-            <option value="">Любая (первая вышедшая)</option>
-            {studios.map((st) => (
-              <option key={st} value={st}>
-                {st}
-              </option>
-            ))}
-          </select>
-        </div>
+          {/* 3. Preferred Studio Voiceover Selector */}
+          <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-2">
+            <label className="text-[11px] text-zinc-400 flex items-center gap-1 shrink-0 font-medium">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>Приоритетная озвучка:</span>
+            </label>
+
+            <select
+              value={selectedStudio}
+              onChange={handleStudioChange}
+              disabled={isUpdating}
+              className="flex-1 min-w-[130px] h-7 px-2 rounded-lg bg-cinema-800 border border-border/70 text-zinc-200 text-xs focus:outline-none focus:border-primary cursor-pointer"
+            >
+              <option value="">Любая (первая вышедшая)</option>
+              {studios.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
       )}
     </div>
   )

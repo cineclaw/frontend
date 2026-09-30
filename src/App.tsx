@@ -14,6 +14,7 @@ import { TrackerSettingsModal } from "@/components/settings/TrackerSettingsModal
 import { LoginModal } from "@/components/auth/LoginModal"
 import { PairModal } from "@/components/auth/PairModal"
 import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
+import { NotificationPromptBanner } from "@/components/notifications/NotificationPromptBanner"
 import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen, setPairingOpen } from "@/store/searchSlice"
 import { useAppRouting } from "@/hooks/useAppRouting"
 
@@ -90,6 +91,9 @@ export default function App() {
         onOpenDiagnostic={handleOpenDiagnostic}
         onOpenTrackerSettings={() => setIsTrackerSettingsOpen(true)}
       />
+
+      {/* Push Notification Permission Prompt Banner */}
+      <NotificationPromptBanner />
 
       {/* Main Content Area (padding bottom comfortably clears fixed bottom dock + safe areas) */}
       <main className="flex-1 flex flex-col pb-[calc(11.5rem+env(safe-area-inset-bottom))]">

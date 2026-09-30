@@ -6,6 +6,7 @@ import { logout } from "@/store/authSlice"
 import { Badge } from "@/components/ui/badge"
 import { useState, useRef, useEffect } from "react"
 import { useDefaultQuality, QUALITY_OPTIONS, useActiveProfile } from "@/lib/userSettings"
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton"
 
 interface HeaderProps {
   onOpenDiagnostic?: () => void
@@ -208,6 +209,9 @@ export function Header({ onOpenDiagnostic, onOpenTrackerSettings }: HeaderProps)
               </div>
             )}
           </div>
+
+          {/* Web Push Notifications Bell */}
+          <NotificationBellButton />
 
           {/* Active Profile Selector Popover */}
           <div className="relative" ref={profileMenuRef}>

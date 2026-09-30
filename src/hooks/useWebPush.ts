@@ -18,7 +18,47 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
+export function checkIsIOS(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  )
+}
+
+export function checkIsStandalone(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true
+  )
+}
+
+async function getServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
+  if (!('serviceWorker' in navigator)) {
+    throw new Error('Service Worker не поддерживается')
+  }
+
+  // 1. Check existing registration
+  const existing = await navigator.serviceWorker.getRegistration()
+  if (existing && existing.active) {
+    return existing
+  }
+
+  // 2. Ensure /sw.js is registered
+  if (!existing) {
+    await navigator.serviceWorker.register('/sw.js')
+  }
+
+  // 3. Await ready state
+  return await navigator.serviceWorker.ready
+}
+
 export function useWebPush() {
+  const isIOS = checkIsIOS()
+  const isStandalone = checkIsStandalone()
+  const needsHomeScreenInstall = isIOS && !isStandalone
+
   const [isSupported, setIsSupported] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default')
   const [isSubscribed, setIsSubscribed] = useState(false)
@@ -31,35 +71,41 @@ export function useWebPush() {
   const [sendTestMutation] = useSendTestNotificationMutation()
   const [activeProfile] = useActiveProfile()
 
-  useEffect(() => {
+  const refreshSubscriptionStatus = useCallback(async () => {
+    if (typeof window === 'undefined') return
     const supported =
-      typeof window !== 'undefined' &&
       'serviceWorker' in navigator &&
       'PushManager' in window &&
       'Notification' in window
 
     setIsSupported(supported)
+
     if (supported) {
       setPermission(Notification.permission)
-      // Check existing subscription
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(Boolean(sub))
-        })
-      }).catch(() => {})
+      try {
+        const reg = await getServiceWorkerRegistration()
+        const sub = await reg.pushManager.getSubscription()
+        setIsSubscribed(Boolean(sub))
+      } catch (err) {
+        setIsSubscribed(false)
+      }
     } else {
       setPermission('unsupported')
     }
   }, [])
 
+  useEffect(() => {
+    refreshSubscriptionStatus()
+  }, [refreshSubscriptionStatus])
+
   const subscribe = useCallback(async (): Promise<boolean> => {
-    if (!isSupported) {
-      setError('Web Push не поддерживается в этом браузере')
+    if (needsHomeScreenInstall) {
+      setError('На iOS для получения push-уведомлений добавьте приложение на экран «Домой» (Поделиться ➔ На экран «Домой»)')
       return false
     }
 
-    if (!vapidData?.public_key) {
-      setError('VAPID ключ не получен от сервера')
+    if (!isSupported) {
+      setError('Web Push не поддерживается в этом браузере')
       return false
     }
 
@@ -67,6 +113,25 @@ export function useWebPush() {
     setError(null)
 
     try {
+      // 1. Resolve VAPID Public Key (cache or direct fetch fallback)
+      let pubKey = vapidData?.public_key
+      if (!pubKey) {
+        try {
+          const res = await fetch('/api/notifications/vapid-key', { credentials: 'include' })
+          if (res.ok) {
+            const data = await res.json()
+            pubKey = data.public_key
+          }
+        } catch {}
+      }
+
+      if (!pubKey) {
+        setError('Не удалось получить VAPID ключ с сервера')
+        setIsLoading(false)
+        return false
+      }
+
+      // 2. Request Notification Permission
       let currentPerm = Notification.permission
       if (currentPerm === 'default') {
         currentPerm = await Notification.requestPermission()
@@ -74,22 +139,24 @@ export function useWebPush() {
       }
 
       if (currentPerm !== 'granted') {
-        setError('Уведомления заблокированы пользователем')
+        setError(currentPerm === 'denied' ? 'Уведомления заблокированы пользователем в браузере' : 'Разрешение на уведомления не получено')
         setIsLoading(false)
         return false
       }
 
-      const reg = await navigator.serviceWorker.ready
+      // 3. Register SW & Subscribe via PushManager
+      const reg = await getServiceWorkerRegistration()
       let sub = await reg.pushManager.getSubscription()
 
       if (!sub) {
-        const appServerKey = urlBase64ToUint8Array(vapidData.public_key)
+        const appServerKey = urlBase64ToUint8Array(pubKey)
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: appServerKey as unknown as BufferSource,
         })
       }
 
+      // 4. Send subscription keys to backend
       const subJson = sub.toJSON()
       const p256dh = subJson.keys?.p256dh || ''
       const auth = subJson.keys?.auth || ''
@@ -107,17 +174,17 @@ export function useWebPush() {
       return true
     } catch (err: any) {
       console.error('[WebPush] Subscription error:', err)
-      setError(err?.message || 'Не удалось подписаться на уведомления')
+      setError(err?.message || 'Не удалось подписаться на push-уведомления')
       setIsLoading(false)
       return false
     }
-  }, [isSupported, vapidData, subscribeMutation, activeProfile])
+  }, [needsHomeScreenInstall, isSupported, vapidData, subscribeMutation, activeProfile])
 
   const unsubscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false
     setIsLoading(true)
     try {
-      const reg = await navigator.serviceWorker.ready
+      const reg = await getServiceWorkerRegistration()
       const sub = await reg.pushManager.getSubscription()
       if (sub) {
         await unsubscribeMutation({ endpoint: sub.endpoint }).unwrap()
@@ -136,12 +203,12 @@ export function useWebPush() {
 
   const sendTest = useCallback(async () => {
     try {
-      await sendTestMutation({
+      const res = await sendTestMutation({
         title: 'CineClaw Cinema',
-        body: 'Тестовое уведомление успешно доставлено!',
+        body: 'Тестовое уведомление успешно получено!',
         profile: activeProfile || 'default',
       }).unwrap()
-      return true
+      return res.success && res.sent_count > 0
     } catch (err) {
       console.error('[WebPush] Test notification error:', err)
       return false
@@ -150,6 +217,9 @@ export function useWebPush() {
 
   return {
     isSupported,
+    isIOS,
+    isStandalone,
+    needsHomeScreenInstall,
     permission,
     isSubscribed,
     isLoading,
@@ -157,5 +227,6 @@ export function useWebPush() {
     subscribe,
     unsubscribe,
     sendTest,
+    refreshSubscriptionStatus,
   }
 }
