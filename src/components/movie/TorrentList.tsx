@@ -270,8 +270,13 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
       })
     }
 
-    // Default sort by seeds descending
-    return [...list].sort((a, b) => b.seeds - a.seeds)
+    // Default sort by seeds descending, putting dead swarms at the bottom
+    return [...list].sort((a, b) => {
+      const aDead = a.swarm_health === "dead" || a.seeds === 0
+      const bDead = b.swarm_health === "dead" || b.seeds === 0
+      if (aDead !== bDead) return aDead ? 1 : -1
+      return b.seeds - a.seeds
+    })
   }, [items, selectedTracker, selectedResolution, isSeries, selectedSeason])
 
   // Counts for active season
@@ -703,9 +708,17 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
 
                     {/* Seeds / Leeches */}
                     <span
-                      className="flex items-center gap-1 text-xs font-mono font-bold text-emerald-400 cursor-default"
+                      className={`flex items-center gap-1 text-xs font-mono font-bold cursor-default ${
+                        torrent.swarm_health === "dead" || torrent.seeds === 0
+                          ? "text-zinc-600 line-through"
+                          : torrent.seeds_verified
+                          ? "text-emerald-400"
+                          : "text-emerald-500/80"
+                      }`}
                       title={
-                        torrent.sources && torrent.sources.length > 1
+                        torrent.seeds_verified
+                          ? `Проверено через UDP-трекеры: ${torrent.real_seeds || torrent.seeds} сидов${torrent.speed_potential ? `, потенциал скорости: ${torrent.speed_potential}%` : ""}`
+                          : torrent.sources && torrent.sources.length > 1
                           ? `Сиды по трекерам: ${torrent.sources
                               .map(
                                 (s) =>
@@ -717,7 +730,24 @@ export function TorrentList({ query, imdbId, year, isSeries, onPlayMedia }: Torr
                     >
                       <ArrowUp className="h-3 w-3" />
                       {torrent.seeds}
+                      {torrent.seeds_verified && torrent.seeds > 0 && (
+                        <span className="text-[10px] text-emerald-300 font-sans ml-0.5" title="Подтверждено в реальном времени через UDP-трекеры">✓</span>
+                      )}
                     </span>
+                    {torrent.speed_potential !== undefined && torrent.speed_potential > 0 && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
+                          torrent.speed_potential >= 80
+                            ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/40"
+                            : torrent.speed_potential >= 50
+                            ? "bg-amber-950/60 text-amber-300 border border-amber-800/40"
+                            : "bg-red-950/60 text-red-300 border border-red-800/40"
+                        }`}
+                        title={`Потенциал скорости раздачи: ${torrent.speed_potential}%`}
+                      >
+                        ⚡ {torrent.speed_potential}%
+                      </span>
+                    )}
                     <span
                       className="flex items-center gap-1 text-xs font-mono text-zinc-500 cursor-default"
                       title={

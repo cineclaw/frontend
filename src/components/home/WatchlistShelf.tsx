@@ -1,10 +1,11 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Bookmark, X, Star, Film, Tv } from "lucide-react"
 import { useAppDispatch } from "@/store/store"
 import { setSelectedMovie } from "@/store/searchSlice"
 import { useGetWatchlistQuery, useRemoveFromWatchlistMutation, type WatchlistItem } from "@/api/torrentsApi"
-import { formatRating } from "@/lib/utils"
+import { cn, formatRating } from "@/lib/utils"
 import { getTmdbImageUrl } from "@/lib/tmdbImages"
+import { useActiveProfile } from "@/lib/userSettings"
 import type { MovieDoc } from "@/api/types"
 
 interface WatchlistCardProps {
@@ -107,12 +108,25 @@ const WatchlistCard: React.FC<WatchlistCardProps> = ({ item, onSelect, onRemove 
 
 export const WatchlistShelf: React.FC = () => {
   const dispatch = useAppDispatch()
-  const { data: items, isLoading } = useGetWatchlistQuery(undefined, {
+  const [activeProfile] = useActiveProfile()
+  const [selectedTab, setSelectedTab] = useState<string>(activeProfile === "kids" ? "kids" : "default")
+
+  // Keep selected tab in sync if global active profile changes
+  useEffect(() => {
+    setSelectedTab(activeProfile === "kids" ? "kids" : "default")
+  }, [activeProfile])
+
+  const { data: defaultItems } = useGetWatchlistQuery({ profile: "default" }, {
+    pollingInterval: 15000,
+  })
+  const { data: kidsItems } = useGetWatchlistQuery({ profile: "kids" }, {
     pollingInterval: 15000,
   })
   const [removeFromWatchlist] = useRemoveFromWatchlistMutation()
 
-  if (isLoading || !items || items.length === 0) {
+  const currentItems = selectedTab === "kids" ? (kidsItems || []) : (defaultItems || [])
+
+  if ((!defaultItems || defaultItems.length === 0) && (!kidsItems || kidsItems.length === 0)) {
     return null
   }
 
@@ -134,7 +148,7 @@ export const WatchlistShelf: React.FC = () => {
 
   const handleRemove = async (imdbId: string) => {
     try {
-      await removeFromWatchlist(imdbId).unwrap()
+      await removeFromWatchlist({ imdbId, profile: selectedTab }).unwrap()
     } catch (err) {
       console.error("Failed to remove from watchlist:", err)
     }
@@ -150,15 +164,43 @@ export const WatchlistShelf: React.FC = () => {
           <h3 className="text-base font-medium text-foreground tracking-tight flex items-center gap-2">
             Буду смотреть
             <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-normal">
-              {items.length}
+              {currentItems.length}
             </span>
           </h3>
+        </div>
+
+        {/* Parent / Kids Watchlist Switcher Tabs */}
+        <div className="flex items-center rounded-xl bg-cinema-900 border border-border/60 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setSelectedTab("default")}
+            className={cn(
+              "px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer",
+              selectedTab === "default"
+                ? "bg-cinema-800 text-white shadow-xs"
+                : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            👤 Мой {defaultItems && defaultItems.length > 0 ? `(${defaultItems.length})` : ""}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedTab("kids")}
+            className={cn(
+              "px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer",
+              selectedTab === "kids"
+                ? "bg-amber-500/20 text-amber-300 font-semibold shadow-xs"
+                : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            🧸 Детям {kidsItems && kidsItems.length > 0 ? `(${kidsItems.length})` : ""}
+          </button>
         </div>
       </div>
 
       {/* Carousel (Edge-to-Edge) */}
       <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-2 pt-0.5 pl-4 sm:pl-6 pr-0 scroll-pl-4 sm:scroll-pl-6 snap-x snap-mandatory">
-        {items.map((item) => (
+        {currentItems.map((item) => (
           <WatchlistCard
             key={item.imdb_id}
             item={item}

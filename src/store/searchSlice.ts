@@ -22,6 +22,8 @@ interface SearchState {
   selectedMediaType: 'movie' | 'tv'
   isFiltersOpen: boolean
   isDiagnosticOpen: boolean
+  isPairingOpen: boolean
+  pairingCode: string | null
   activePlayer: ActiveCinemaPlayer | null
 }
 
@@ -45,6 +47,8 @@ const initialState: SearchState = {
   selectedMediaType: 'movie',
   isFiltersOpen: false,
   isDiagnosticOpen: false,
+  isPairingOpen: false,
+  pairingCode: null,
   activePlayer: null,
 }
 
@@ -114,6 +118,16 @@ export const searchSlice = createSlice({
     setDiagnosticOpen: (state, action: PayloadAction<boolean>) => {
       state.isDiagnosticOpen = action.payload
     },
+    setPairingOpen: (state, action: PayloadAction<boolean>) => {
+      state.isPairingOpen = action.payload
+      if (!action.payload) {
+        state.pairingCode = null
+      }
+    },
+    setPairingCode: (state, action: PayloadAction<string | null>) => {
+      state.pairingCode = action.payload
+      state.isPairingOpen = action.payload !== null
+    },
     openCinemaPlayer: (state, action: PayloadAction<ActiveCinemaPlayer>) => {
       state.activePlayer = action.payload
     },
@@ -141,6 +155,8 @@ export const {
   toggleFiltersOpen,
   setFiltersOpen,
   setDiagnosticOpen,
+  setPairingOpen,
+  setPairingCode,
   openCinemaPlayer,
   closeCinemaPlayer,
 } = searchSlice.actions

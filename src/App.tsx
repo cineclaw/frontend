@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useAppSelector, useAppDispatch } from "@/store/store"
 import { useSearchMoviesQuery } from "@/api/moviesApi"
 import { Header } from "@/components/layout/Header"
@@ -10,9 +10,12 @@ import { MovieModal } from "@/components/movie/MovieModal"
 import { PersonModal } from "@/components/person/PersonModal"
 import { ShelfModal } from "@/components/home/ShelfModal"
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal"
+import { TrackerSettingsModal } from "@/components/settings/TrackerSettingsModal"
 import { LoginModal } from "@/components/auth/LoginModal"
+import { PairModal } from "@/components/auth/PairModal"
 import { CinemaPlayerModal } from "@/components/player/CinemaPlayerModal"
-import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen } from "@/store/searchSlice"
+import { NotificationPromptBanner } from "@/components/notifications/NotificationPromptBanner"
+import { toggleFiltersOpen, closeCinemaPlayer, setDiagnosticOpen, setPairingOpen } from "@/store/searchSlice"
 import { useAppRouting } from "@/hooks/useAppRouting"
 
 export default function App() {
@@ -26,6 +29,8 @@ export default function App() {
     isFiltersOpen,
     activePlayer,
     isDiagnosticOpen,
+    isPairingOpen,
+    pairingCode,
   } = useAppSelector((state) => state.search)
 
   const {
@@ -65,6 +70,8 @@ export default function App() {
     }
   }, [debouncedQuery, data?.hits])
 
+  const [isTrackerSettingsOpen, setIsTrackerSettingsOpen] = useState(false)
+
   const handleOpenDiagnostic = () => {
     dispatch(setDiagnosticOpen(true))
   }
@@ -80,7 +87,13 @@ export default function App() {
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary">
       {/* Top Navigation Header */}
-      <Header onOpenDiagnostic={handleOpenDiagnostic} />
+      <Header
+        onOpenDiagnostic={handleOpenDiagnostic}
+        onOpenTrackerSettings={() => setIsTrackerSettingsOpen(true)}
+      />
+
+      {/* Push Notification Permission Prompt Banner */}
+      <NotificationPromptBanner />
 
       {/* Main Content Area (padding bottom comfortably clears fixed bottom dock + safe areas) */}
       <main className="flex-1 flex flex-col pb-[calc(11.5rem+env(safe-area-inset-bottom))]">
@@ -145,8 +158,28 @@ export default function App() {
         onClose={handleCloseDiagnostic}
       />
 
+      {/* Tracker Settings & Cookie Management Screen */}
+      <TrackerSettingsModal
+        isOpen={isTrackerSettingsOpen}
+        onClose={() => setIsTrackerSettingsOpen(false)}
+      />
+
+      {/* TV & Living Room Device Pairing Modal */}
+      <PairModal
+        isOpen={isPairingOpen}
+        initialCode={pairingCode || ""}
+        onClose={() => {
+          dispatch(setPairingOpen(false))
+          if (window.history.state?.hasInAppHistory) {
+            window.history.back()
+          } else {
+            window.history.pushState({}, '', '/')
+          }
+        }}
+      />
+
       {/* Authentication Login Screen */}
-      <LoginModal isOpen={!isAuthenticated} />
+      <LoginModal isOpen={!isAuthenticated && !isPairingOpen} />
 
       {/* Embedded Cinema Video Player Modal (Global Root Portal) */}
       {activePlayer && (

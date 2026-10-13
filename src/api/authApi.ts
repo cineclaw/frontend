@@ -41,7 +41,14 @@ export const authApi = createApi({
         url: "api/auth/me",
       }),
     }),
+    approvePairing: builder.mutation<{ success: boolean; message: string; username: string }, { code: string }>({
+      query: (body) => ({
+        url: "api/auth/pair/approve",
+        method: "POST",
+        body,
+      }),
+    }),
   }),
 })
 
-export const { useLoginMutation, useLogoutMutation, useMeQuery, useLazyMeQuery } = authApi
+export const { useLoginMutation, useLogoutMutation, useMeQuery, useLazyMeQuery, useApprovePairingMutation } = authApi

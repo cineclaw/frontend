@@ -132,17 +132,29 @@ export function scoreTorrent(
     }
   }
 
-  // 1. Seeders score: Primary metric for streaming reliability
-  const seeders = torrent.seeds || 0
-  score += Math.min(seeders, 50) * 3 + Math.log1p(seeders) * 25
+  // 1. Seeders & Swarm Vitality score: Primary metric for streaming reliability
+  if ((torrent.seeds_verified && torrent.seeds === 0) || torrent.swarm_health === "dead") {
+    score -= 3000 // Confirmed dead/ghost swarm
+  } else {
+    const seeders = torrent.seeds || 0
+    score += Math.min(seeders, 50) * 3 + Math.log1p(seeders) * 25
 
-  // Heavy penalties for dead or low-seed torrents
-  if (seeders === 0) {
-    score -= 250
-  } else if (seeders < 3) {
-    score -= 100
-  } else if (seeders < 6) {
-    score -= 40
+    // Heavy penalties for dead or low-seed torrents
+    if (seeders === 0) {
+      score -= 250
+    } else if (seeders < 3) {
+      score -= 100
+    } else if (seeders < 6) {
+      score -= 40
+    }
+
+    // Verified seeders and speed potential bonuses
+    if (torrent.seeds_verified && seeders > 0) {
+      score += 150
+    }
+    if (torrent.speed_potential) {
+      score += Math.round(torrent.speed_potential * 2)
+    }
   }
 
   // 2. Audio Dub score: Minor tie-breaker (seeds are primary)

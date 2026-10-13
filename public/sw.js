@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cineclaw-v1.0.0';
+const CACHE_NAME = 'cineclaw-v1.3.1';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.webmanifest',
@@ -105,4 +105,64 @@ self.addEventListener('fetch', (event) => {
       })
     );
   }
+});
+
+// 4. Web Push Notifications for New Episodes & Updates
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'CineClaw Cinema',
+    body: 'Новое обновление доступно!',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
+    data: { url: '/' },
+  };
+
+  if (event.data) {
+    try {
+      const payload = event.data.json();
+      data = { ...data, ...payload };
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icons/icon-192x192.png',
+    badge: data.badge || '/icons/icon-192x192.png',
+    image: data.image,
+    tag: data.tag || 'cineclaw-update',
+    renotify: true,
+    data: data.data || { url: '/' },
+    actions: [
+      { action: 'open', title: '▶ Смотреть' }
+    ],
+    vibrate: [200, 100, 200],
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+// 5. Notification Click Handler: Open or focus window with target URL
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          if ('navigate' in client) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
 });

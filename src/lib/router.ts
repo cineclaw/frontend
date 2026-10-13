@@ -16,6 +16,7 @@ export type AppRoute =
   | { type: 'person'; personId: number }
   | { type: 'shelf'; shelfId: string; mediaType?: 'movie' | 'tv' }
   | { type: 'diagnostic' }
+  | { type: 'pair'; code?: string }
   | {
       type: 'watch'
       tconst: string
@@ -36,9 +37,31 @@ export function parseAppUrl(
   const cleanPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
   const searchParams = new URLSearchParams(search)
 
+  // 0. TV Pairing screen: /pair or /tv
+  if (cleanPath === '/pair' || cleanPath === '/tv') {
+    const code = searchParams.get('code') || undefined
+    return { type: 'pair', code }
+  }
+
   // 1. Diagnostic screen: /diagnostic or #diagnostic
   if (cleanPath === '/diagnostic' || hash === '#diagnostic') {
     return { type: 'diagnostic' }
+  }
+
+  // 1.5 Notification direct play link: /?play=:tconst&season=:s&episode=:e
+  const playTconst = searchParams.get('play')
+  if (playTconst) {
+    const seasonStr = searchParams.get('season') || searchParams.get('s')
+    const episodeStr = searchParams.get('episode') || searchParams.get('e')
+    const season = seasonStr ? parseInt(seasonStr, 10) : undefined
+    const episode = episodeStr ? parseInt(episodeStr, 10) : undefined
+    return {
+      type: 'watch',
+      tconst: playTconst,
+      season: !isNaN(season as number) ? season : undefined,
+      episode: !isNaN(episode as number) ? episode : undefined,
+      autoResume: true,
+    }
   }
 
   // 2. Watch / Video Player screen: /watch/:tconst or /player/:tconst
@@ -147,6 +170,8 @@ export function buildRouteUrl(route: AppRoute): string {
     }
     case 'diagnostic':
       return '/diagnostic'
+    case 'pair':
+      return route.code ? `/pair?code=${encodeURIComponent(route.code)}` : '/pair'
     case 'watch': {
       let url = `/watch/${encodeURIComponent(route.tconst)}`
       const params: string[] = []

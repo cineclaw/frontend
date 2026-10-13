@@ -15,6 +15,7 @@ import {
   openCinemaPlayer,
   closeCinemaPlayer,
   setDiagnosticOpen,
+  setPairingCode,
   setImmediateQuery,
   setTypeFilter,
   setYearRange,
@@ -51,6 +52,10 @@ export function useAppRouting() {
     switch (route.type) {
       case 'diagnostic':
         dispatch(setDiagnosticOpen(true))
+        break
+
+      case 'pair':
+        dispatch(setPairingCode(route.code || ''))
         break
 
       case 'watch':
