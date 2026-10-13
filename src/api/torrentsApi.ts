@@ -34,6 +34,11 @@ export interface TorrentResult {
   seasons?: number[]
   is_complete?: boolean
   resolution?: '4k' | '1080p' | 'lq' | string
+  real_seeds?: number
+  seeds_verified?: boolean
+  completed?: number
+  swarm_health?: 'dead' | 'low' | 'good' | 'excellent' | string
+  speed_potential?: number
 }
 
 export interface TorrentsQueryParams {

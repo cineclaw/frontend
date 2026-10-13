@@ -1231,9 +1231,18 @@ export const CinemaPlayerModal: React.FC<CinemaPlayerModalProps> = ({
       })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native Safari / iOS
-      video.pause()
-      video.src = streamUrl
-      video.load()
+      let nextSrc = streamUrl
+      try {
+        nextSrc = new URL(streamUrl, window.location.origin).href
+      } catch {}
+      const srcChanged = video.src !== nextSrc
+
+      if (srcChanged) {
+        video.pause()
+        video.src = streamUrl
+        video.load()
+      }
+
       const handleLoadedMetadata = () => {
         setIsBuffering(false)
         setIsSwitchingQuality(false)
